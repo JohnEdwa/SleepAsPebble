@@ -10,7 +10,9 @@
         ],
         "displayName": "Sleep as Android for Pebble",
         "enableMultiJS": true,
-        "messageKeys": [],
+        "messageKeys": [
+            "timeline_token"
+        ],
         "projectType": "native",
         "resources": {
             "media": [

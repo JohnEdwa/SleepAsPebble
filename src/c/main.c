@@ -96,7 +96,7 @@ bool quietTimeStateOld = false;
 unsigned char batteryLevel = 0;
 unsigned char batteryState = 0;
 HealthValue bpmValue = 0;
-static char info_text_buffer[32];
+static char info_text_buffer[64];
 
 // POINTERS
 static AppTimer *timer;
@@ -486,6 +486,15 @@ static void select_long_click_handler(ClickRecognizerRef recognizer, void *conte
   }
 }
 
+
+// Capture the back button to stop quitting the app accidentally, but do so on double tap
+static void back_click_handler(ClickRecognizerRef recognizer, void *context) {
+	APP_LOG(APP_LOG_LEVEL_DEBUG, "Back click provider");
+  window_stack_pop_all(true);
+}
+
+
+
 static void config_provider_ab(void *ctx) {
   if (debug) APP_LOG(APP_LOG_LEVEL_DEBUG, "Click provider");
   window_single_click_subscribe(BUTTON_ID_UP, up_click_handler);
@@ -495,6 +504,8 @@ static void config_provider_ab(void *ctx) {
 static void config_provider(void *ctx) {
   window_single_click_subscribe(BUTTON_ID_SELECT, select_click_handler);
   window_long_click_subscribe(BUTTON_ID_SELECT, 700, select_long_click_handler, NULL);
+	//window_single_click_subscribe(BUTTON_ID_BACK, back_click_handler);
+	window_multi_click_subscribe(BUTTON_ID_BACK, 2, 0, 0, true, back_click_handler);
 //  window_single_click_subscribe(BUTTON_ID_UP, up_click_handler);
 //  window_single_click_subscribe(BUTTON_ID_DOWN, down_click_handler);
 }
@@ -805,6 +816,9 @@ void in_dropped_handler(AppMessageResult reason, void *context) {
     APP_LOG(APP_LOG_LEVEL_ERROR, "Dropped message");
 }
 
+
+
+
 // Builds the toggle layer
 static void info_update_proc(Layer *layer, GContext *ctx) {
 	if (debug) APP_LOG(APP_LOG_LEVEL_DEBUG, "info_update_proc");
@@ -821,7 +835,7 @@ static void info_update_proc(Layer *layer, GContext *ctx) {
 	if (quietTimeState) {}
 	*/
 	#if defined(PBL_HEALTH)
-		if (bpmValue > 0) snprintf(info_text_buffer, sizeof(info_text_buffer), "BT:%d | QT:%d | BAT:%d%%\n\n\n\nHR:%d", bluetoothState, quietTimeState, batteryLevel*10, (int) bpmValue);
+		if (bpmValue > 0) snprintf(info_text_buffer, sizeof(info_text_buffer), "BT:%d | QT:%d | BAT:%d%%\n\n\n\n                   HR:%4d", bluetoothState, quietTimeState, batteryLevel*10, (int) bpmValue);
 		else snprintf(info_text_buffer, sizeof(info_text_buffer), "BT:%d | QT:%d | BAT:%d%%", bluetoothState, quietTimeState, batteryLevel*10);
 	#else
 		snprintf(info_text_buffer, sizeof(info_text_buffer), "BT:%d | QT:%d | BAT:%d%%", bluetoothState, quietTimeState, batteryLevel*10);
