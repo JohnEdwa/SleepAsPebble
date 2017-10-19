@@ -88,6 +88,16 @@ static char* timeline_token;
 
 static int current_hr = 0;
 
+// info layer vars
+bool bluetoothState = false;
+bool bluetoothStateOld = false;
+bool quietTimeState = false;
+bool quietTimeStateOld = false;
+unsigned char batteryLevel = 0;
+unsigned char batteryState = 0;
+HealthValue bpmValue = 0;
+static char info_text_buffer[32];
+
 // POINTERS
 static AppTimer *timer;
 static AppTimer *action_acked_timer;
@@ -113,6 +123,9 @@ static BitmapLayer *image_layer_alarm;
 static Layer *image_layer_alarm_ref;
 static Layer *alarm_layer_ref;
 static Layer *alarm_parent_layer_ref;
+
+static Layer *info_layer;
+static TextLayer *info_text_layer;
 
 // Forward declarations
 static void alarm_hide();
@@ -792,6 +805,60 @@ void in_dropped_handler(AppMessageResult reason, void *context) {
     APP_LOG(APP_LOG_LEVEL_ERROR, "Dropped message");
 }
 
+// Builds the toggle layer
+static void info_update_proc(Layer *layer, GContext *ctx) {
+	if (debug) APP_LOG(APP_LOG_LEVEL_DEBUG, "info_update_proc");
+
+	/*
+	// Battery batteryLevel / BatteryState
+	if (batteryLevel >= 1 || batteryState == 1) {
+	}
+
+	// Bluetooth
+	if (bluetoothState) {}
+ 
+	// QuietTime
+	if (quietTimeState) {}
+	*/
+	#if defined(PBL_HEALTH)
+		if (bpmValue > 0) snprintf(info_text_buffer, sizeof(info_text_buffer), "BT:%d | QT:%d | BAT:%d%%\n\n\n\nHR:%d", bluetoothState, quietTimeState, batteryLevel*10, (int) bpmValue);
+		else snprintf(info_text_buffer, sizeof(info_text_buffer), "BT:%d | QT:%d | BAT:%d%%", bluetoothState, quietTimeState, batteryLevel*10);
+	#else
+		snprintf(info_text_buffer, sizeof(info_text_buffer), "BT:%d | QT:%d | BAT:%d%%", bluetoothState, quietTimeState, batteryLevel*10);
+	#endif
+	text_layer_set_text(info_text_layer, info_text_buffer);
+}
+
+// Monitor battery status
+static void handle_battery(BatteryChargeState charge_state) {	
+	if (charge_state.is_charging) batteryState = 1;
+	else if (charge_state.is_plugged) batteryState = 2;
+	else batteryState = 0;	
+	batteryLevel = ((charge_state.charge_percent)/10);
+	if (debug) APP_LOG(APP_LOG_LEVEL_DEBUG, "handle_battery: state %d, level %d", batteryState, batteryLevel);
+	layer_mark_dirty(info_layer);
+}
+
+// Monitor BT status
+static void handle_bluetooth(bool connected) {
+	if (debug) APP_LOG(APP_LOG_LEVEL_DEBUG, "handle_bluetooth: %d", connected);
+  bluetoothState = connected;
+	//bluetoothStateOld = bluetoothState;
+	layer_mark_dirty(info_layer);
+}
+
+// Handle Health Events
+#if defined(PBL_HEALTH)
+	#if PBL_API_EXISTS(health_service_set_heart_rate_sample_period)
+static void handle_health(HealthEventType event, void *context) {
+		if (debug) APP_LOG(APP_LOG_LEVEL_DEBUG, "update_health : %d", event);
+		if (event == HealthEventSignificantUpdate || event == HealthEventHeartRateUpdate) {
+			bpmValue = health_service_peek_current_value(HealthMetricHeartRateBPM);
+		}
+		layer_mark_dirty(info_layer);
+}
+	#endif
+#endif
 
 static void timer_callback(void *data) {
   if (pending_values_count < MAX_QUEUED_VALUES) {
@@ -911,6 +978,37 @@ static void window_load(Window *window) {
   display_time(tick_time);
 
   tick_timer_service_subscribe(MINUTE_UNIT, handle_minute_tick);
+	
+	
+	// Create Info Layer
+	info_layer = layer_create(GRect(0,0,144,75));
+	layer_set_update_proc(info_layer, info_update_proc);
+	layer_add_child(window_layer, info_layer);
+	
+	// Create Info Text Layer (Temporary)
+	info_text_layer = text_layer_create(bounds);
+	text_layer_set_text_color(info_text_layer, GColorWhite);
+	text_layer_set_background_color(info_text_layer, GColorClear);
+	text_layer_set_overflow_mode(info_text_layer, GTextOverflowModeWordWrap);
+	text_layer_set_text_alignment(info_text_layer, GTextAlignmentCenter);
+	text_layer_set_text(info_text_layer, "Hello, World!");
+	
+	layer_add_child(info_layer, text_layer_get_layer(info_text_layer));
+	
+	// subscribe to event handlers
+	#if defined(PBL_HEALTH)
+		#if PBL_API_EXISTS(health_service_set_heart_rate_sample_period)
+			health_service_events_subscribe(handle_health, NULL);
+		#endif	
+	#endif
+	
+	battery_state_service_subscribe(handle_battery);
+	handle_battery(battery_state_service_peek());
+	
+	connection_service_subscribe((ConnectionHandlers) {.pebble_app_connection_handler = handle_bluetooth});
+	handle_bluetooth(bluetooth_connection_service_peek());
+	
+	quietTimeState = quiet_time_is_active();
 
 }
 
@@ -988,6 +1086,10 @@ static void deinit(void) {
   app_timer_cancel(timer);
 
   accel_data_service_unsubscribe();
+	
+	battery_state_service_unsubscribe();
+	connection_service_unsubscribe();
+	health_service_events_unsubscribe();
 
   // Reset heart rate sampling period to watch-controlled default
   if (hr) {
@@ -998,8 +1100,7 @@ static void deinit(void) {
           #endif
       #endif
   }
-
-
+	
   window_destroy(window);
 }
 
