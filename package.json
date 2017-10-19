@@ -1,0 +1,68 @@
+{
+    "author": "Urbandroid",
+    "dependencies": {},
+    "keywords": [],
+    "name": "sleep-as-android",
+    "pebble": {
+        "capabilities": [
+            "configurable",
+            "health"
+        ],
+        "displayName": "Sleep as Android for Pebble",
+        "enableMultiJS": true,
+        "messageKeys": [],
+        "projectType": "native",
+        "resources": {
+            "media": [
+                {
+                    "file": "images/alarm.png",
+                    "name": "IMAGE_ALARM",
+                    "targetPlatforms": null,
+                    "type": "bitmap"
+                },
+                {
+                    "file": "images/a_snooze.png",
+                    "name": "ACTION_SNOOZE",
+                    "targetPlatforms": null,
+                    "type": "bitmap"
+                },
+                {
+                    "file": "images/a_pause.png",
+                    "name": "ACTION_PAUSE",
+                    "targetPlatforms": null,
+                    "type": "bitmap"
+                },
+                {
+                    "file": "images/a_dismiss.png",
+                    "name": "ACTION_DISMISS",
+                    "targetPlatforms": null,
+                    "type": "bitmap"
+                },
+                {
+                    "file": "images/icon.png",
+                    "name": "ICON",
+                    "targetPlatforms": null,
+                    "type": "bitmap"
+                },
+                {
+                    "file": "images/bg.png",
+                    "name": "IMAGE_BG",
+                    "targetPlatforms": null,
+                    "type": "bitmap"
+                }
+            ]
+        },
+        "sdkVersion": "3",
+        "targetPlatforms": [
+            "aplite",
+            "basalt",
+            "chalk",
+            "diorite"
+        ],
+        "uuid": "24b0a1e5-f0b1-440d-8e53-8f26688a3f07",
+        "watchapp": {
+            "watchface": false
+        }
+    },
+    "version": "3.1.0"
+}
