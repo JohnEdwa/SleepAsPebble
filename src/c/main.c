@@ -108,6 +108,8 @@ static GBitmap *image_action_snooze;
 static GBitmap *image_action_dismiss;
 static GBitmap *image_action_pause;
 
+static GBitmap *icon_sprites, *icon_bt, *icon_qt, *icon_bat, *icon_heart;
+
 static Window *window;
 static ActionBarLayer *action_bar_layer;
 static TextLayer *text_layer;
@@ -486,14 +488,11 @@ static void select_long_click_handler(ClickRecognizerRef recognizer, void *conte
   }
 }
 
-
 // Capture the back button to stop quitting the app accidentally, but do so on double tap
 static void back_click_handler(ClickRecognizerRef recognizer, void *context) {
 	APP_LOG(APP_LOG_LEVEL_DEBUG, "Back click provider");
   window_stack_pop_all(true);
 }
-
-
 
 static void config_provider_ab(void *ctx) {
   if (debug) APP_LOG(APP_LOG_LEVEL_DEBUG, "Click provider");
@@ -611,7 +610,6 @@ static void alarm_hide() {
   }
 }
 
-
 float asqrt(const float num) {
     const uint MAX_STEPS = 40;
     const float MAX_ERROR = 0.001;
@@ -624,8 +622,6 @@ float asqrt(const float num) {
     }
     return answer;
 }
-
-
 
 // Business logic
 void store_max(AccelData data) {
@@ -823,24 +819,28 @@ void in_dropped_handler(AppMessageResult reason, void *context) {
 static void info_update_proc(Layer *layer, GContext *ctx) {
 	if (debug) APP_LOG(APP_LOG_LEVEL_DEBUG, "info_update_proc");
 
-	/*
 	// Battery batteryLevel / BatteryState
-	if (batteryLevel >= 1 || batteryState == 1) {
-	}
+	graphics_draw_bitmap_in_rect(ctx, icon_bat, GRect(144-32,0,32,16));
+	graphics_context_set_fill_color(ctx, GColorWhite);
+	graphics_fill_rect(ctx, GRect(144-29,3,((batteryLevel)*(26)/(10)),10), 0, 0);
+	
+	// batteryLevel * 26 -> 26 to 260
 
 	// Bluetooth
-	if (bluetoothState) {}
+	icon_bt = gbitmap_create_as_sub_bitmap(icon_sprites, GRect(bluetoothState ? 0 : 16,0,16,16));
+	graphics_draw_bitmap_in_rect(ctx, icon_bt, GRect(0,0,16,16));
  
 	// QuietTime
-	if (quietTimeState) {}
-	*/
+	icon_qt = gbitmap_create_as_sub_bitmap(icon_sprites, GRect(quietTimeState ? 0 : 16,16,16,16));
+	graphics_draw_bitmap_in_rect(ctx, icon_qt, GRect(16,0,16,16));
+	
 	#if defined(PBL_HEALTH)
-		if (bpmValue > 0) snprintf(info_text_buffer, sizeof(info_text_buffer), "BT:%d | QT:%d | BAT:%d%%\n\n\n\n                   HR:%4d", bluetoothState, quietTimeState, batteryLevel*10, (int) bpmValue);
-		else snprintf(info_text_buffer, sizeof(info_text_buffer), "BT:%d | QT:%d | BAT:%d%%", bluetoothState, quietTimeState, batteryLevel*10);
-	#else
-		snprintf(info_text_buffer, sizeof(info_text_buffer), "BT:%d | QT:%d | BAT:%d%%", bluetoothState, quietTimeState, batteryLevel*10);
+		icon_heart = gbitmap_create_as_sub_bitmap(icon_sprites, GRect(0,48,16,16));
+		graphics_draw_bitmap_in_rect(ctx, icon_heart, GRect(48,0,16,16));
+		snprintf(info_text_buffer, sizeof(info_text_buffer), "%3d", (int) bpmValue);
+		text_layer_set_text(info_text_layer, info_text_buffer);
 	#endif
-	text_layer_set_text(info_text_layer, info_text_buffer);
+		
 }
 
 // Monitor battery status
@@ -939,7 +939,7 @@ static void timer_callback(void *data) {
 
 // USER INTERFACE INIT
 
-// widnow load
+// window load
 static void window_load(Window *window) {
 
   if (debug) APP_LOG(APP_LOG_LEVEL_DEBUG, "Window load");
@@ -999,13 +999,19 @@ static void window_load(Window *window) {
 	layer_set_update_proc(info_layer, info_update_proc);
 	layer_add_child(window_layer, info_layer);
 	
+	// Create Info images
+	icon_sprites = gbitmap_create_with_resource(RESOURCE_ID_IMAGE_SPRITES);
+	icon_bt = gbitmap_create_as_sub_bitmap(icon_sprites, GRect(0,0,16,16));
+	icon_qt = gbitmap_create_as_sub_bitmap(icon_sprites, GRect(0,16,16,16));
+	icon_bat = gbitmap_create_as_sub_bitmap(icon_sprites, GRect(0,32,32,16));
+	icon_heart = gbitmap_create_as_sub_bitmap(icon_sprites, GRect(0,48,16,16));
+	
 	// Create Info Text Layer (Temporary)
-	info_text_layer = text_layer_create(bounds);
+	info_text_layer = text_layer_create(GRect(72,-2,32,16));
 	text_layer_set_text_color(info_text_layer, GColorWhite);
 	text_layer_set_background_color(info_text_layer, GColorClear);
 	text_layer_set_overflow_mode(info_text_layer, GTextOverflowModeWordWrap);
-	text_layer_set_text_alignment(info_text_layer, GTextAlignmentCenter);
-	text_layer_set_text(info_text_layer, "Hello, World!");
+	text_layer_set_text_alignment(info_text_layer, GTextAlignmentLeft);
 	
 	layer_add_child(info_layer, text_layer_get_layer(info_text_layer));
 	
@@ -1040,6 +1046,17 @@ static void window_unload(Window *window) {
   action_bar_hide(window);
   alarm_hide();
   tick_timer_service_unsubscribe();
+	
+	// destroy info layer stuff	
+	gbitmap_destroy(icon_bt);
+	gbitmap_destroy(icon_qt);
+	gbitmap_destroy(icon_bat);
+	gbitmap_destroy(icon_heart);
+	gbitmap_destroy(icon_sprites);
+	
+	text_layer_destroy(info_text_layer);
+	layer_destroy(info_layer);
+	
 }
 
 

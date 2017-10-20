@@ -17,6 +17,12 @@
         "resources": {
             "media": [
                 {
+                    "file": "images/sprites.png",
+                    "name": "IMAGE_SPRITES",
+                    "targetPlatforms": null,
+                    "type": "bitmap"
+                },
+                {
                     "file": "images/alarm.png",
                     "name": "IMAGE_ALARM",
                     "targetPlatforms": null,
@@ -56,7 +62,7 @@
         },
         "sdkVersion": "3",
         "targetPlatforms": [
-            "basalt",
+            "aplite",
             "diorite"
         ],
         "uuid": "24b0a1e5-f0b1-440d-8e53-8f26688a3f07",
