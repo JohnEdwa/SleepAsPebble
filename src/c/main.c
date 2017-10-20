@@ -134,37 +134,37 @@ static void alarm_hide();
 static void action_bar_hide(Window *window);
 static bool is_connection_dead();
 
-static const uint32_t const segments[] = { 800, 400, 800, 400, 800 };
+static const uint32_t segments[] = { 800, 400, 800, 400, 800 };
 VibePattern pat = {
   .durations = segments,
   .num_segments = ARRAY_LENGTH(segments),
 };
 
-static const uint32_t const segments2[] = { 800, 400, 800 };
+static const uint32_t segments2[] = { 800, 400, 800 };
 VibePattern pat2 = {
   .durations = segments2,
   .num_segments = ARRAY_LENGTH(segments2),
 };
 
-static const uint32_t const segments3[] = { 800, 400, 800, 400, 800 };
+static const uint32_t segments3[] = { 800, 400, 800, 400, 800 };
 VibePattern pat3 = {
   .durations = segments3,
   .num_segments = ARRAY_LENGTH(segments3),
 };
 
-static const uint32_t const segments4[] = { 800, 400, 800, 400, 800, 400, 800 };
+static const uint32_t segments4[] = { 800, 400, 800, 400, 800, 400, 800 };
 VibePattern pat4 = {
   .durations = segments4,
   .num_segments = ARRAY_LENGTH(segments4),
 };
 
-static const uint32_t const segments5[] = { 800, 400, 800, 400, 800, 400, 800, 400, 800 };
+static const uint32_t segments5[] = { 800, 400, 800, 400, 800, 400, 800, 400, 800 };
 VibePattern pat5 = {
   .durations = segments5,
   .num_segments = ARRAY_LENGTH(segments5),
 };
 
-static const uint32_t const segments10[] = { 800, 400, 800, 400, 800, 400, 800, 400, 800, 400, 800, 400, 800, 400, 800, 400, 800, 400, 800 };
+static const uint32_t segments10[] = { 800, 400, 800, 400, 800, 400, 800, 400, 800, 400, 800, 400, 800, 400, 800, 400, 800, 400, 800 };
 VibePattern pat10 = {
   .durations = segments10,
   .num_segments = ARRAY_LENGTH(segments10),
@@ -444,16 +444,15 @@ static void stopAlarm() {
 
 // ACTIONBAR
 
+/*
 static void up_click_handler(ClickRecognizerRef recognizer, void *context) {
   if (debug) APP_LOG(APP_LOG_LEVEL_DEBUG, "SNOOZE");
 
   // Even snooze will stop current alarm. We do not support really snoozing on watch without phone.
   scheduled_alarm_ts = 0;
-
   if (alarm) {
     if (debug) APP_LOG(APP_LOG_LEVEL_DEBUG, "SNOOZE");
     send_action_using_app_message(MSG_KEY_SNOOZE);
-
       stopAlarm();
       hide_ab_with_next_tick = true;
     }
@@ -480,6 +479,12 @@ static void select_click_handler(ClickRecognizerRef recognizer, void *context) {
   }
 }
 
+// Capture the back button to stop quitting the app accidentally, but do so on double tap
+static void back_click_handler(ClickRecognizerRef recognizer, void *context) {
+	APP_LOG(APP_LOG_LEVEL_DEBUG, "Back click provider");
+  window_stack_pop_all(true);
+}
+
 static void select_long_click_handler(ClickRecognizerRef recognizer, void *context) {
   if (!alarm) {
     send_action_using_app_message(MSG_KEY_RESUME);
@@ -487,24 +492,71 @@ static void select_long_click_handler(ClickRecognizerRef recognizer, void *conte
     if (debug) APP_LOG(APP_LOG_LEVEL_DEBUG, "Not doing resume alarm active");
   }
 }
+*/
 
-// Capture the back button to stop quitting the app accidentally, but do so on double tap
-static void back_click_handler(ClickRecognizerRef recognizer, void *context) {
-	APP_LOG(APP_LOG_LEVEL_DEBUG, "Back click provider");
-  window_stack_pop_all(true);
+
+static void single_click_handler(ClickRecognizerRef recognizer, void *context) {	
+	switch (click_recognizer_get_button_id(recognizer)) {
+		case BUTTON_ID_UP:
+			// Even snooze will stop current alarm. We do not support really snoozing on watch without phone.
+			scheduled_alarm_ts = 0;
+			if (alarm) {
+				if (debug) APP_LOG(APP_LOG_LEVEL_DEBUG, "SNOOZE");
+				send_action_using_app_message(MSG_KEY_SNOOZE);
+					stopAlarm();
+					hide_ab_with_next_tick = true;
+			}
+			break;
+		case BUTTON_ID_DOWN:
+			scheduled_alarm_ts = 0;
+			if (alarm) {
+				if (debug) APP_LOG(APP_LOG_LEVEL_DEBUG, "DISMISS");
+				send_action_using_app_message(MSG_KEY_DISMISS);
+			//    stopAlarm();
+			//    hide_ab_with_next_tick = true;
+			}
+			break;
+		case BUTTON_ID_SELECT:
+			if (!alarm) {
+				send_action_using_app_message(MSG_KEY_PAUSE);
+			} else { if (debug) APP_LOG(APP_LOG_LEVEL_DEBUG, "Not doing pause alarm active"); }
+			break;
+		default: break;
+	}
+}
+
+static void long_click_handler(ClickRecognizerRef recognizer, void *context) {
+	switch (click_recognizer_get_button_id(recognizer)) {
+		case BUTTON_ID_SELECT:
+			if (!alarm) {
+				send_action_using_app_message(MSG_KEY_RESUME);
+			} else {
+				if (debug) APP_LOG(APP_LOG_LEVEL_DEBUG, "Not doing resume alarm active");
+			}
+			break;
+		default: break;
+	}
+}
+
+static void multi_click_handler(ClickRecognizerRef recognizer, void *context) {
+	switch (click_recognizer_get_button_id(recognizer)) {
+		case BUTTON_ID_BACK:
+			window_stack_pop_all(true);
+			break;
+		default: break;
+	}
 }
 
 static void config_provider_ab(void *ctx) {
   if (debug) APP_LOG(APP_LOG_LEVEL_DEBUG, "Click provider");
-  window_single_click_subscribe(BUTTON_ID_UP, up_click_handler);
-  window_single_click_subscribe(BUTTON_ID_DOWN, down_click_handler);
+  window_single_click_subscribe(BUTTON_ID_UP, single_click_handler);
+  window_single_click_subscribe(BUTTON_ID_DOWN, single_click_handler);
 }
 
 static void config_provider(void *ctx) {
-  window_single_click_subscribe(BUTTON_ID_SELECT, select_click_handler);
-  window_long_click_subscribe(BUTTON_ID_SELECT, 700, select_long_click_handler, NULL);
-	//window_single_click_subscribe(BUTTON_ID_BACK, back_click_handler);
-	window_multi_click_subscribe(BUTTON_ID_BACK, 2, 0, 0, true, back_click_handler);
+  window_single_click_subscribe(BUTTON_ID_SELECT, single_click_handler);
+  window_long_click_subscribe(BUTTON_ID_SELECT, 700, long_click_handler, NULL);
+	window_multi_click_subscribe(BUTTON_ID_BACK, 2, 0, 0, true, multi_click_handler);
 //  window_single_click_subscribe(BUTTON_ID_UP, up_click_handler);
 //  window_single_click_subscribe(BUTTON_ID_DOWN, down_click_handler);
 }
@@ -822,7 +874,7 @@ static void info_update_proc(Layer *layer, GContext *ctx) {
 	// Battery batteryLevel / BatteryState
 	graphics_draw_bitmap_in_rect(ctx, icon_bat, GRect(144-32,0,32,16));
 	graphics_context_set_fill_color(ctx, GColorWhite);
-	graphics_fill_rect(ctx, GRect(144-29,3,((batteryLevel)*(26)/(10)),10), 0, 0);
+	graphics_fill_rect(ctx, GRect(118,5,(batteryLevel*2),6), 0, 0);
 	
 	// batteryLevel * 26 -> 26 to 260
 
