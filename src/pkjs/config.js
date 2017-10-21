@@ -36,7 +36,8 @@ module.exports = [
         "type": "toggle",
         "messageKey": "uiConf[2]",
         "label": "Show Heartrate.",
-        "defaultValue": false
+        "defaultValue": false,
+				"capabilities": ["HEALTH"]
       }
     ]
   },

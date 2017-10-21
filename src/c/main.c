@@ -899,7 +899,7 @@ void in_received_handler(DictionaryIterator *received, void *context) {
 	
 	// Don't bother saving every communication, only if we got config settings.
 	if (t_enableBackground && t_enableInfo && t_enableHeartrate && t_doubleTapExit) {
-		if (DEBUG) APP_LOG(APP_LOG_LEVEL_DEBUG, "Config Received: %d, %d, %d, %d", conf.doubleTapExit, conf.enableBackground,conf.enableInfo,conf.enableHeartrate);
+		if (DEBUG) APP_LOG(APP_LOG_LEVEL_DEBUG, "Config Received: %d, %d, %d, %d", (int) conf.doubleTapExit, (int) conf.enableBackground, (int) conf.enableInfo, (int) conf.enableHeartrate);
 		save_settings();
 	} 
 }
@@ -910,19 +910,21 @@ void in_dropped_handler(AppMessageResult reason, void *context) { APP_LOG(APP_LO
 // Builds the toggle layer
 static void info_update_proc(Layer *layer, GContext *ctx) {
 	if (DEBUG) APP_LOG(APP_LOG_LEVEL_DEBUG, "info_update_proc");
-
-	// Battery batteryLevel / BatteryState
-	graphics_draw_bitmap_in_rect(ctx, icon_bat, GRect(144-32,0,32,16));
-	graphics_context_set_fill_color(ctx, GColorWhite);
-	graphics_fill_rect(ctx, GRect(118,5,(batteryLevel*2),6), 1, GCornersAll);
+	
+	GRect bounds = layer_get_bounds(layer);
 
 	// Bluetooth
 	gbitmap_set_bounds(icon_bt, GRect(bluetoothState ? 0 : 16,0,16,16));
-	graphics_draw_bitmap_in_rect(ctx, icon_bt, GRect(0,0,16,16));
+	graphics_draw_bitmap_in_rect(ctx, icon_bt, PBL_IF_RECT_ELSE(GRect(0,0,16,16), GRect(8,bounds.size.w/2-32,16,16)));
  
 	// QuietTime
-	gbitmap_set_bounds(icon_qt, GRect(quietTimeState ? 16 : 0,16,16,16));
-	graphics_draw_bitmap_in_rect(ctx, icon_qt, GRect(16,0,16,16));
+	gbitmap_set_bounds(icon_qt, GRect(quietTimeState ? 0 : 16,16,16,16));
+	graphics_draw_bitmap_in_rect(ctx, icon_qt, PBL_IF_RECT_ELSE(GRect(16,0,16,16), GRect(8,bounds.size.w/2+16,16,16)));
+	
+		// Battery batteryLevel / BatteryState
+	graphics_draw_bitmap_in_rect(ctx, icon_bat, PBL_IF_RECT_ELSE(GRect(bounds.size.w-32,0,32,16), GRect(5,(bounds.size.w/2)-16,16,32)));
+	graphics_context_set_fill_color(ctx, GColorWhite);
+	graphics_fill_rect(ctx, PBL_IF_RECT_ELSE( GRect(118,5,(batteryLevel*2),6), GRect(10,(bounds.size.h/2)-10+(20-batteryLevel*2),6,(batteryLevel*2)) ), 1, GCornersAll);
 	
 	if (conf.enableHeartrate) {
 		#if defined(PBL_HEALTH)
@@ -1039,6 +1041,7 @@ static void window_load(Window *window) {
 
   window_set_background_color(window, GColorBlack);
 
+	// Background layer
   image = gbitmap_create_with_resource(RESOURCE_ID_IMAGE_BG);
   image_layer = bitmap_layer_create(bounds);
   bitmap_layer_set_bitmap(image_layer, image);
@@ -1051,7 +1054,7 @@ static void window_load(Window *window) {
   bitmap_layer_set_alignment(image_layer_pause, GAlignRight);
   layer_add_child(window_layer, bitmap_layer_get_layer(image_layer_pause));
 
-  text_layer = text_layer_create((GRect) { .origin = { 0, 1 }, .size = { bounds.size.w, 80 } });
+  text_layer = text_layer_create((GRect) { .origin = { 0, 3 }, .size = { bounds.size.w, 80 } });
   text_layer_set_text_alignment(text_layer, GTextAlignmentCenter);
 
   #if defined(PBL_RECT)
@@ -1084,7 +1087,7 @@ static void window_load(Window *window) {
   tick_timer_service_subscribe(MINUTE_UNIT, handle_minute_tick);
 	
 	// Create Info Layer
-	info_layer = layer_create(GRect(0,0,144,75));
+	info_layer = layer_create(GRect(0,0,bounds.size.w,bounds.size.h));
 	layer_set_update_proc(info_layer, info_update_proc);
 	layer_add_child(window_layer, info_layer);
 	
@@ -1092,7 +1095,7 @@ static void window_load(Window *window) {
 	icon_sprites = gbitmap_create_with_resource(RESOURCE_ID_IMAGE_SPRITES);
 	icon_bt = gbitmap_create_as_sub_bitmap(icon_sprites, GRect(0,0,32,16));
 	icon_qt = gbitmap_create_as_sub_bitmap(icon_sprites, GRect(0,16,32,16));
-	icon_bat = gbitmap_create_as_sub_bitmap(icon_sprites, GRect(0,32,32,16));
+	icon_bat = gbitmap_create_as_sub_bitmap(icon_sprites, PBL_IF_RECT_ELSE(GRect(0,32,32,16),GRect(16,48,16,32)));
 	icon_heart = gbitmap_create_as_sub_bitmap(icon_sprites, GRect(0,48,16,16));
 	
 	// Create Info Text Layer (Temporary)
