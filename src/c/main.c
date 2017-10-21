@@ -1,5 +1,8 @@
 #include <pebble.h>
 
+#define debug 0
+#define DEBUG 1
+
 // Frequency for old applications
 #define SAMPLING_TIMER_BACKWARDS 9000
 // This has to be the same as SleepService.FRAMERATE
@@ -44,10 +47,35 @@ enum {
     MSG_KEY_TIMELINE_TOKEN = 999,
 };
 
+// Clay settings struct
+#define SETTINGS_KEY 1
+typedef struct ClaySettings {
+  bool enableBackground;
+  bool enableInfo;
+	bool enableHeartrate;
+	bool doubleTapExit;
+} ClaySettings;
+static ClaySettings conf;
+
+static void default_settings() {
+	conf.enableBackground = true;
+	conf.enableInfo = true;
+	conf.enableHeartrate = false;
+	conf.doubleTapExit = false;
+}
+
+// info layer vars
+bool bluetoothState = false;
+bool bluetoothStateOld = false;
+bool quietTimeState = false;
+bool quietTimeStateOld = false;
+unsigned char batteryLevel = 0;
+unsigned char batteryState = 0;
+HealthValue bpmValue = 0;
+static char info_text_buffer[64];
+
 // VARIABLES
 static bool last = false;
-
-static bool debug = false;
 
 static bool hr = false;
 
@@ -88,15 +116,7 @@ static char* timeline_token;
 
 static int current_hr = 0;
 
-// info layer vars
-bool bluetoothState = false;
-bool bluetoothStateOld = false;
-bool quietTimeState = false;
-bool quietTimeStateOld = false;
-unsigned char batteryLevel = 0;
-unsigned char batteryState = 0;
-HealthValue bpmValue = 0;
-static char info_text_buffer[64];
+
 
 // POINTERS
 static AppTimer *timer;
@@ -134,37 +154,37 @@ static void alarm_hide();
 static void action_bar_hide(Window *window);
 static bool is_connection_dead();
 
-static const uint32_t segments[] = { 800, 400, 800, 400, 800 };
+static uint32_t segments[] = { 800, 400, 800, 400, 800 };
 VibePattern pat = {
   .durations = segments,
   .num_segments = ARRAY_LENGTH(segments),
 };
 
-static const uint32_t segments2[] = { 800, 400, 800 };
+static uint32_t segments2[] = { 800, 400, 800 };
 VibePattern pat2 = {
   .durations = segments2,
   .num_segments = ARRAY_LENGTH(segments2),
 };
 
-static const uint32_t segments3[] = { 800, 400, 800, 400, 800 };
+static uint32_t segments3[] = { 800, 400, 800, 400, 800 };
 VibePattern pat3 = {
   .durations = segments3,
   .num_segments = ARRAY_LENGTH(segments3),
 };
 
-static const uint32_t segments4[] = { 800, 400, 800, 400, 800, 400, 800 };
+static uint32_t segments4[] = { 800, 400, 800, 400, 800, 400, 800 };
 VibePattern pat4 = {
   .durations = segments4,
   .num_segments = ARRAY_LENGTH(segments4),
 };
 
-static const uint32_t segments5[] = { 800, 400, 800, 400, 800, 400, 800, 400, 800 };
+static uint32_t segments5[] = { 800, 400, 800, 400, 800, 400, 800, 400, 800 };
 VibePattern pat5 = {
   .durations = segments5,
   .num_segments = ARRAY_LENGTH(segments5),
 };
 
-static const uint32_t segments10[] = { 800, 400, 800, 400, 800, 400, 800, 400, 800, 400, 800, 400, 800, 400, 800, 400, 800, 400, 800 };
+static uint32_t segments10[] = { 800, 400, 800, 400, 800, 400, 800, 400, 800, 400, 800, 400, 800, 400, 800, 400, 800, 400, 800 };
 VibePattern pat10 = {
   .durations = segments10,
   .num_segments = ARRAY_LENGTH(segments10),
@@ -556,7 +576,7 @@ static void config_provider_ab(void *ctx) {
 static void config_provider(void *ctx) {
   window_single_click_subscribe(BUTTON_ID_SELECT, single_click_handler);
   window_long_click_subscribe(BUTTON_ID_SELECT, 700, long_click_handler, NULL);
-	window_multi_click_subscribe(BUTTON_ID_BACK, 2, 0, 0, true, multi_click_handler);
+	if (conf.doubleTapExit) window_multi_click_subscribe(BUTTON_ID_BACK, 2, 0, 0, true, multi_click_handler);
 //  window_single_click_subscribe(BUTTON_ID_UP, up_click_handler);
 //  window_single_click_subscribe(BUTTON_ID_DOWN, down_click_handler);
 }
@@ -703,6 +723,20 @@ void store_max(AccelData data) {
 
 // HANDLERS
 
+// Clay Settings handlers
+// Save settings
+static void save_settings() {
+  int ret = persist_write_data(SETTINGS_KEY, &conf, sizeof(conf));
+	if (DEBUG) APP_LOG(APP_LOG_LEVEL_DEBUG, "Config Save: %d | %d, %d, %d, %d", ret,conf.doubleTapExit, conf.enableBackground,conf.enableInfo,conf.enableHeartrate);
+}
+
+// Load settings
+static void load_settings() {
+	default_settings();
+	int ret = persist_read_data(SETTINGS_KEY, &conf, sizeof(conf));
+	if (DEBUG) APP_LOG(APP_LOG_LEVEL_DEBUG, "Config Load: %d | %d, %d, %d, %d", ret,conf.doubleTapExit, conf.enableBackground,conf.enableInfo,conf.enableHeartrate);
+}
+
 // minute tick handler
 static void handle_minute_tick(struct tm *tick_time, TimeUnits units_changed) {
   display_time(tick_time);
@@ -740,6 +774,7 @@ void out_failed_handler(DictionaryIterator *failed, AppMessageResult reason, voi
 // Incoming message received.
 void in_received_handler(DictionaryIterator *received, void *context) {
   // APP_LOG(APP_LOG_LEVEL_ERROR, "Received data");
+	if (DEBUG) APP_LOG(APP_LOG_LEVEL_DEBUG, "Received message.");
   last_received_msg_ts = time(NULL);
 
   Tuple *alarm_start = dict_find(received, MSG_KEY_ALARM_START);
@@ -755,7 +790,6 @@ void in_received_handler(DictionaryIterator *received, void *context) {
   Tuple *enable_hr = dict_find(received, MSG_KEY_ENABLE_HR);
 
   if (alarm_start) {
-
     if (alarm_start->length == 4) {
         alarm_delay = alarm_start->value->uint32;
     } else {
@@ -856,43 +890,47 @@ void in_received_handler(DictionaryIterator *received, void *context) {
   if (timeline_token) {
     send_timeline_token(timeline_token->value->cstring);
   }
-
+	
+	// Configuration handling	
+	Tuple *t_enableBackground = dict_find(received, MESSAGE_KEY_uiConf); 			if (t_enableBackground) conf.enableBackground = t_enableBackground->value->int32 == 1;
+	Tuple *t_enableInfo = dict_find(received, MESSAGE_KEY_uiConf + 1); 				if (t_enableInfo) conf.enableInfo = t_enableInfo->value->int32 == 1;
+	Tuple *t_enableHeartrate = dict_find(received, MESSAGE_KEY_uiConf + 2); 	if (t_enableHeartrate) conf.enableHeartrate = t_enableHeartrate->value->int32 == 1;
+	Tuple *t_doubleTapExit = dict_find(received, MESSAGE_KEY_uiConf + 3); 		if (t_doubleTapExit) conf.doubleTapExit = t_doubleTapExit->value->int32 == 1;
+	
+	// Don't bother saving every communication, only if we got config settings.
+	if (t_enableBackground && t_enableInfo && t_enableHeartrate && t_doubleTapExit) {
+		if (DEBUG) APP_LOG(APP_LOG_LEVEL_DEBUG, "Config Received: %d, %d, %d, %d", conf.doubleTapExit, conf.enableBackground,conf.enableInfo,conf.enableHeartrate);
+		save_settings();
+	} 
 }
 
 // Incoming message dropped.
-void in_dropped_handler(AppMessageResult reason, void *context) {
-    APP_LOG(APP_LOG_LEVEL_ERROR, "Dropped message");
-}
-
-
-
+void in_dropped_handler(AppMessageResult reason, void *context) { APP_LOG(APP_LOG_LEVEL_ERROR, "Dropped message");}
 
 // Builds the toggle layer
 static void info_update_proc(Layer *layer, GContext *ctx) {
-	if (debug) APP_LOG(APP_LOG_LEVEL_DEBUG, "info_update_proc");
+	if (DEBUG) APP_LOG(APP_LOG_LEVEL_DEBUG, "info_update_proc");
 
 	// Battery batteryLevel / BatteryState
 	graphics_draw_bitmap_in_rect(ctx, icon_bat, GRect(144-32,0,32,16));
 	graphics_context_set_fill_color(ctx, GColorWhite);
-	graphics_fill_rect(ctx, GRect(118,5,(batteryLevel*2),6), 0, 0);
-	
-	// batteryLevel * 26 -> 26 to 260
+	graphics_fill_rect(ctx, GRect(118,5,(batteryLevel*2),6), 1, GCornersAll);
 
 	// Bluetooth
-	icon_bt = gbitmap_create_as_sub_bitmap(icon_sprites, GRect(bluetoothState ? 0 : 16,0,16,16));
+	gbitmap_set_bounds(icon_bt, GRect(bluetoothState ? 0 : 16,0,16,16));
 	graphics_draw_bitmap_in_rect(ctx, icon_bt, GRect(0,0,16,16));
  
 	// QuietTime
-	icon_qt = gbitmap_create_as_sub_bitmap(icon_sprites, GRect(quietTimeState ? 0 : 16,16,16,16));
+	gbitmap_set_bounds(icon_qt, GRect(quietTimeState ? 16 : 0,16,16,16));
 	graphics_draw_bitmap_in_rect(ctx, icon_qt, GRect(16,0,16,16));
 	
-	#if defined(PBL_HEALTH)
-		icon_heart = gbitmap_create_as_sub_bitmap(icon_sprites, GRect(0,48,16,16));
-		graphics_draw_bitmap_in_rect(ctx, icon_heart, GRect(48,0,16,16));
-		snprintf(info_text_buffer, sizeof(info_text_buffer), "%3d", (int) bpmValue);
-		text_layer_set_text(info_text_layer, info_text_buffer);
-	#endif
-		
+	if (conf.enableHeartrate) {
+		#if defined(PBL_HEALTH)
+			graphics_draw_bitmap_in_rect(ctx, icon_heart, GRect(48,0,16,16));
+			snprintf(info_text_buffer, sizeof(info_text_buffer), "%3d", (int) bpmValue);
+			text_layer_set_text(info_text_layer, info_text_buffer);
+		#endif	
+	}
 }
 
 // Monitor battery status
@@ -1045,7 +1083,6 @@ static void window_load(Window *window) {
 
   tick_timer_service_subscribe(MINUTE_UNIT, handle_minute_tick);
 	
-	
 	// Create Info Layer
 	info_layer = layer_create(GRect(0,0,144,75));
 	layer_set_update_proc(info_layer, info_update_proc);
@@ -1053,8 +1090,8 @@ static void window_load(Window *window) {
 	
 	// Create Info images
 	icon_sprites = gbitmap_create_with_resource(RESOURCE_ID_IMAGE_SPRITES);
-	icon_bt = gbitmap_create_as_sub_bitmap(icon_sprites, GRect(0,0,16,16));
-	icon_qt = gbitmap_create_as_sub_bitmap(icon_sprites, GRect(0,16,16,16));
+	icon_bt = gbitmap_create_as_sub_bitmap(icon_sprites, GRect(0,0,32,16));
+	icon_qt = gbitmap_create_as_sub_bitmap(icon_sprites, GRect(0,16,32,16));
 	icon_bat = gbitmap_create_as_sub_bitmap(icon_sprites, GRect(0,32,32,16));
 	icon_heart = gbitmap_create_as_sub_bitmap(icon_sprites, GRect(0,48,16,16));
 	
@@ -1067,20 +1104,27 @@ static void window_load(Window *window) {
 	
 	layer_add_child(info_layer, text_layer_get_layer(info_text_layer));
 	
-	// subscribe to event handlers
-	#if defined(PBL_HEALTH)
-		#if PBL_API_EXISTS(health_service_set_heart_rate_sample_period)
-			health_service_events_subscribe(handle_health, NULL);
-		#endif	
-	#endif
+	// If infobar is enabled, we register the handlers	
+	if (conf.enableInfo) {
+		battery_state_service_subscribe(handle_battery);
+		handle_battery(battery_state_service_peek());	
+		connection_service_subscribe((ConnectionHandlers) {.pebble_app_connection_handler = handle_bluetooth});
+		handle_bluetooth(bluetooth_connection_service_peek());	
+		quietTimeState = quiet_time_is_active();
+
+		if (conf.enableHeartrate) {
+			// subscribe to event handlers
+			#if defined(PBL_HEALTH)
+				#if PBL_API_EXISTS(health_service_set_heart_rate_sample_period)
+					health_service_events_subscribe(handle_health, NULL);
+				#endif	
+			#endif
+		}
+	}
 	
-	battery_state_service_subscribe(handle_battery);
-	handle_battery(battery_state_service_peek());
-	
-	connection_service_subscribe((ConnectionHandlers) {.pebble_app_connection_handler = handle_bluetooth});
-	handle_bluetooth(bluetooth_connection_service_peek());
-	
-	quietTimeState = quiet_time_is_active();
+	// Show or hide layers based on settings
+	layer_set_hidden(bitmap_layer_get_layer(image_layer), !conf.enableBackground);
+	layer_set_hidden(info_layer, !conf.enableInfo);
 
 }
 
@@ -1124,6 +1168,10 @@ static void focus_handler(bool in_focus) {
 // INITIALIZATION AND MAIN
 
 static void init(void) {
+	
+	// Load clay settings
+	load_settings();
+	
   // Initialize the communication channels with phone.
   app_message_register_inbox_received(in_received_handler);
   app_message_register_inbox_dropped(in_dropped_handler);
@@ -1132,7 +1180,7 @@ static void init(void) {
 
   app_focus_service_subscribe(focus_handler);
 
-  const uint32_t inbound_size = 64;
+  const uint32_t inbound_size = 512;
   const uint32_t outbound_size = 128;
   app_message_open(inbound_size, outbound_size);
 

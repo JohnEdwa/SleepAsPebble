@@ -1,3 +1,7 @@
+var Clay = require('pebble-clay');
+var clayConfig = require('./config');
+var clay = new Clay(clayConfig);
+
 // Set callback for the app ready event
 Pebble.addEventListener("ready",
 	function(e) {

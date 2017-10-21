@@ -1,6 +1,8 @@
 {
     "author": "Urbandroid",
-    "dependencies": {},
+    "dependencies": {
+        "pebble-clay": "^1.0.4"
+    },
     "keywords": [],
     "name": "sleep-as-android",
     "pebble": {
@@ -11,7 +13,7 @@
         "displayName": "Sleep as Android for Pebble",
         "enableMultiJS": true,
         "messageKeys": [
-            "timeline_token"
+            "uiConf[16]"
         ],
         "projectType": "native",
         "resources": {
