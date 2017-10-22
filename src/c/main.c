@@ -62,6 +62,7 @@ typedef struct ClaySettings {
 static ClaySettings conf;
 
 static void default_settings() {
+	APP_LOG(APP_LOG_LEVEL_INFO, "Conf - Loading default settings.");
 	conf.enableBackground = true;
 	conf.enableInfo = true;
 	conf.enableHeartrate = false;
@@ -113,9 +114,9 @@ static bool new_app = false;
 
 static bool hide_ab_with_next_tick = false;
 static bool alarm = false;
-static bool alarm_layer_created = false;
 static int alarm_counter = 0;
 static int alarm_delay = 0;
+static char alarm_buf[8] = {0};
 
 static int postponed_action = -1;
 
@@ -629,8 +630,23 @@ static void action_bar_hide(Window *window) {
 
 static void alarm_show(char* text) {
   if (debug) APP_LOG(APP_LOG_LEVEL_DEBUG, "Alarm show: %s", text);
-	if (DEBUG) APP_LOG(APP_LOG_LEVEL_DEBUG, "Adding Alarm - heap used %d", (int) heap_bytes_used());
+	
+  GRect bounds = layer_get_bounds(window_get_root_layer(window));
+	
+	text_layer_set_text(alarm_layer, text);	
+	
+	int alarm_layer_height = PBL_IF_RECT_ELSE(40,40);
+  int alarm_layer_top = PBL_IF_RECT_ELSE(10,6);
 
+	layer_set_frame(text_layer_get_layer(alarm_parent_layer), GRect(0, bounds.size.h - alarm_layer_height, bounds.size.w, bounds.size.h));
+	layer_set_frame(text_layer_get_layer(alarm_layer), GRect(22, 0, bounds.size.w - 22, alarm_layer_height));
+	
+	int text_size = text_layer_get_content_size(alarm_layer).w;
+	layer_set_frame(bitmap_layer_get_layer(image_layer_alarm), GRect(((bounds.size.w - 22 - text_size) / 2), alarm_layer_top, 20, 20));
+	
+	layer_set_hidden(text_layer_get_layer(alarm_parent_layer), false);
+	
+	/*
   Layer *window_layer = window_get_root_layer(window);
   GRect bounds = layer_get_bounds(window_layer);
 
@@ -683,9 +699,12 @@ static void alarm_show(char* text) {
 	else {
 		text_layer_set_text(alarm_layer, text);
 	}
+	*/
 }
 
-static void alarm_hide() {
+static void alarm_hide() {	
+	layer_set_hidden(text_layer_get_layer(alarm_parent_layer), true);
+	/*
   if (alarm_layer_created) {
 		if (DEBUG) APP_LOG(APP_LOG_LEVEL_DEBUG, "Removing Alarm");
     layer_remove_from_parent(alarm_layer_ref);
@@ -699,6 +718,7 @@ static void alarm_hide() {
 		
 		alarm_layer_created = false;
   }
+	*/
 }
 
 float asqrt(const float num) {
@@ -746,18 +766,19 @@ void store_max(AccelData data) {
 // Save settings
 static void save_settings() {
   int ret = persist_write_data(SETTINGS_KEY, &conf, sizeof(conf));
-	if (DEBUG) APP_LOG(APP_LOG_LEVEL_DEBUG, "Config Save: %d", ret);
+	if (DEBUG) APP_LOG(APP_LOG_LEVEL_DEBUG, "Conf - Persistent Settings Saved | %d", ret);
 	
 	// Pop the window
 	window_stack_pop_all(true);
-	window_stack_push(window, true);	
+	window_stack_push(window, true);
+	send_action_using_app_message(MSG_KEY_START_APP);	
 }
 
 // Load settings
 static void load_settings() {
 	default_settings();
 	int ret = persist_read_data(SETTINGS_KEY, &conf, sizeof(conf));
-	if (DEBUG) APP_LOG(APP_LOG_LEVEL_DEBUG, "Config Load: %d", ret);
+	if (DEBUG) APP_LOG(APP_LOG_LEVEL_DEBUG, "Conf - Persistent Settings Loaded | %d", ret);
 }
 
 // minute tick handler
@@ -928,7 +949,6 @@ void in_received_handler(DictionaryIterator *received, void *context) {
 	
 	// Don't bother saving every communication, only if we got config settings.
 	if (t_conf[0]) {
-		if (DEBUG) APP_LOG(APP_LOG_LEVEL_DEBUG, "Config Received: %d, %d, %d, %d", (int) conf.doubleTapExit, (int) conf.enableBackground, (int) conf.enableInfo, (int) conf.enableHeartrate);
 		save_settings();
 	} 
 }
@@ -1080,13 +1100,15 @@ static void window_load(Window *window) {
   bitmap_layer_set_alignment(image_layer, GAlignCenter);
   layer_add_child(window_layer, bitmap_layer_get_layer(image_layer));
 
+	// Pause bitmap layer
   image_action_pause = gbitmap_create_with_resource(RESOURCE_ID_ACTION_PAUSE);
   image_layer_pause = bitmap_layer_create(bounds);
   bitmap_layer_set_bitmap(image_layer_pause, image_action_pause);
   bitmap_layer_set_alignment(image_layer_pause, GAlignRight);
   layer_add_child(window_layer, bitmap_layer_get_layer(image_layer_pause));
 
-  text_layer = text_layer_create((GRect) { .origin = { 0, PBL_IF_RECT_ELSE(15,3) }, .size = { bounds.size.w, 80 } });
+	// Time text layer
+  text_layer = text_layer_create(GRect(0,PBL_IF_RECT_ELSE(10,3), bounds.size.w, 80));
   text_layer_set_text_alignment(text_layer, GTextAlignmentCenter);
 	
 	font_w800_42 = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_HOUR_35));
@@ -1101,6 +1123,7 @@ static void window_load(Window *window) {
 			layer_set_frame(text_layer_get_layer(text_layer), GRect(0, 25, bounds.size.w, 80 ));
 			text_layer_set_font(text_layer, font_w800_42);
 		}
+		else text_layer_set_font(text_layer, fonts_get_system_font(FONT_KEY_ROBOTO_BOLD_SUBSET_49));
   #elif defined(PBL_ROUND)
     text_layer_set_font(text_layer, fonts_get_system_font(FONT_KEY_GOTHIC_28_BOLD));
   #endif
@@ -1110,6 +1133,7 @@ static void window_load(Window *window) {
   text_layer_set_text_color(text_layer, GColorWhite);
   layer_add_child(window_layer, text_layer_get_layer(text_layer));
 
+	// Pause layer
   pause_layer = text_layer_create(GRect(0, bounds.size.h / 2 - 10, bounds.size.w - 20, bounds.size.h / 2 + 10));
   text_layer_set_text_alignment(pause_layer, GTextAlignmentRight);
   #if defined(PBL_RECT)
@@ -1128,6 +1152,35 @@ static void window_load(Window *window) {
 
   tick_timer_service_subscribe(MINUTE_UNIT, handle_minute_tick);
 	
+	// Alarm layer
+	alarm_parent_layer = text_layer_create(GRect(0, 0, bounds.size.w, bounds.size.h));
+
+	alarm_layer = text_layer_create(GRect(0, 0, bounds.size.w, bounds.size.h));
+	text_layer_set_text_alignment(alarm_layer, GTextAlignmentCenter);
+
+	#if defined(PBL_RECT)
+		text_layer_set_font(alarm_layer, fonts_get_system_font(FONT_KEY_BITHAM_30_BLACK));
+		text_layer_set_background_color(alarm_parent_layer, GColorWhite);
+		text_layer_set_overflow_mode(alarm_layer, GTextOverflowModeWordWrap);
+		text_layer_set_text_color(alarm_layer, GColorBlack);
+	#elif defined(PBL_ROUND)
+		text_layer_set_font(alarm_layer, fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD));
+		text_layer_set_background_color(alarm_parent_layer, GColorClear);
+		text_layer_set_background_color(alarm_layer, GColorClear);
+		text_layer_set_text_color(alarm_layer, GColorWhite);
+	#endif
+
+	layer_add_child(text_layer_get_layer(alarm_parent_layer), text_layer_get_layer(alarm_layer));
+
+	image_alarm = gbitmap_create_with_resource(RESOURCE_ID_IMAGE_ALARM);
+	image_layer_alarm = bitmap_layer_create(GRect(0, 0, 20, 20));
+	bitmap_layer_set_bitmap(image_layer_alarm, image_alarm);
+	bitmap_layer_set_alignment(image_layer_alarm, GAlignLeft);
+	layer_add_child(text_layer_get_layer(alarm_parent_layer), bitmap_layer_get_layer(image_layer_alarm));
+
+	layer_add_child(window_layer, text_layer_get_layer(alarm_parent_layer));
+	layer_set_hidden(text_layer_get_layer(alarm_parent_layer), true);
+
 	// Create Info Layer
 	info_layer = layer_create(GRect(0,0,bounds.size.w,bounds.size.h));
 	layer_set_update_proc(info_layer, info_update_proc);
@@ -1161,7 +1214,6 @@ static void window_load(Window *window) {
 	// Show or hide layers based on settings
 	layer_set_hidden(bitmap_layer_get_layer(image_layer), !conf.enableBackground);
 	layer_set_hidden(info_layer, (!conf.enableInfo && !conf.enableHeartrate));
-
 }
 
 // window unload
@@ -1179,19 +1231,29 @@ static void window_unload(Window *window) {
   alarm_hide();
   tick_timer_service_unsubscribe();
 	
+	// Alarm bar
+	//layer_remove_from_parent(alarm_layer_ref);
+	//layer_remove_from_parent(image_layer_alarm_ref);
+	//layer_remove_from_parent(alarm_parent_layer_ref);
+
+	gbitmap_destroy(image_alarm);
+	bitmap_layer_destroy(image_layer_alarm);
+	text_layer_destroy(alarm_layer);
+	text_layer_destroy(alarm_parent_layer);
+	
 	// destroy info layer stuff	
 	gbitmap_destroy(icon_bt);
 	gbitmap_destroy(icon_qt);
 	gbitmap_destroy(icon_bat);
 	gbitmap_destroy(icon_heart);
 	gbitmap_destroy(icon_sprites);	
-	//fonts_unload_custom_font(font_w800_42);
+	fonts_unload_custom_font(font_w800_42);
 	
 	battery_state_service_unsubscribe();
 	connection_service_unsubscribe();
 	health_service_events_unsubscribe();
 
-	//layer_destroy(info_layer);	
+	layer_destroy(info_layer);	
 }
 
 
