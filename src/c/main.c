@@ -1,7 +1,7 @@
 #include <pebble.h>
 
 #define debug 0
-#define DEBUG 1
+#define DEBUG 0
 
 // Frequency for old applications
 #define SAMPLING_TIMER_BACKWARDS 9000
