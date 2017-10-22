@@ -19,6 +19,14 @@
         "resources": {
             "media": [
                 {
+                    "characterRegex": "[0-9:. ]",
+                    "file": "fonts/FONT_HOUR_BIG_42.TTF",
+                    "name": "FONT_HOUR_35",
+                    "targetPlatforms": null,
+                    "trackingAdjust": 3,
+                    "type": "font"
+                },
+                {
                     "file": "images/sprites.png",
                     "name": "IMAGE_SPRITES",
                     "targetPlatforms": null,

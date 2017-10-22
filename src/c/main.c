@@ -14,6 +14,9 @@
 
 #define SECONDS_IN_WEEK 604800
 
+#define SPRITE_H 16
+#define SPRITE_W 16
+
 // CONSTANTS
 // Messages coming from phone
 enum {
@@ -54,6 +57,7 @@ typedef struct ClaySettings {
   bool enableInfo;
 	bool enableHeartrate;
 	bool doubleTapExit;
+	unsigned char timeFont;
 } ClaySettings;
 static ClaySettings conf;
 
@@ -62,6 +66,7 @@ static void default_settings() {
 	conf.enableInfo = true;
 	conf.enableHeartrate = false;
 	conf.doubleTapExit = false;
+	conf.timeFont = 0;
 }
 
 // info layer vars
@@ -72,7 +77,8 @@ bool quietTimeStateOld = false;
 unsigned char batteryLevel = 0;
 unsigned char batteryState = 0;
 HealthValue bpmValue = 0;
-static char info_text_buffer[64];
+HealthValue bpmValueOld = 1;
+static char hr_text_buffer[8];
 
 // VARIABLES
 static bool last = false;
@@ -107,6 +113,7 @@ static bool new_app = false;
 
 static bool hide_ab_with_next_tick = false;
 static bool alarm = false;
+static bool alarm_layer_created = false;
 static int alarm_counter = 0;
 static int alarm_delay = 0;
 
@@ -121,6 +128,8 @@ static int current_hr = 0;
 // POINTERS
 static AppTimer *timer;
 static AppTimer *action_acked_timer;
+
+static GFont font_w800_42;
 
 static GBitmap *image;
 static GBitmap *image_alarm;
@@ -147,7 +156,6 @@ static Layer *alarm_layer_ref;
 static Layer *alarm_parent_layer_ref;
 
 static Layer *info_layer;
-static TextLayer *info_text_layer;
 
 // Forward declarations
 static void alarm_hide();
@@ -621,6 +629,7 @@ static void action_bar_hide(Window *window) {
 
 static void alarm_show(char* text) {
   if (debug) APP_LOG(APP_LOG_LEVEL_DEBUG, "Alarm show: %s", text);
+	if (DEBUG) APP_LOG(APP_LOG_LEVEL_DEBUG, "Adding Alarm - heap used %d", (int) heap_bytes_used());
 
   Layer *window_layer = window_get_root_layer(window);
   GRect bounds = layer_get_bounds(window_layer);
@@ -635,42 +644,50 @@ static void alarm_show(char* text) {
     alarm_layer_top = 6;
   #endif
 
-  alarm_parent_layer = text_layer_create(GRect(0, bounds.size.h - alarm_layer_height, bounds.size.w, bounds.size.h));
-  alarm_parent_layer_ref = text_layer_get_layer(alarm_parent_layer);
+	if (!alarm_layer_created) {
+		alarm_parent_layer = text_layer_create(GRect(0, bounds.size.h - alarm_layer_height, bounds.size.w, bounds.size.h));
+		alarm_parent_layer_ref = text_layer_get_layer(alarm_parent_layer);
 
-  alarm_layer = text_layer_create(GRect(22, 0, bounds.size.w - 22, alarm_layer_height));
-  text_layer_set_text(alarm_layer, text);
-  text_layer_set_text_alignment(alarm_layer, GTextAlignmentCenter);
+		alarm_layer = text_layer_create(GRect(22, 0, bounds.size.w - 22, alarm_layer_height));
+		text_layer_set_text(alarm_layer, text);
+		text_layer_set_text_alignment(alarm_layer, GTextAlignmentCenter);
 
-  #if defined(PBL_RECT)
-    text_layer_set_font(alarm_layer, fonts_get_system_font(FONT_KEY_BITHAM_30_BLACK));
-    text_layer_set_background_color(alarm_parent_layer, GColorWhite);
-    text_layer_set_overflow_mode(alarm_layer, GTextOverflowModeWordWrap);
-    text_layer_set_text_color(alarm_layer, GColorBlack);
-  #elif defined(PBL_ROUND)
-    text_layer_set_font(alarm_layer, fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD));
-    text_layer_set_background_color(alarm_parent_layer, GColorClear);
-    text_layer_set_background_color(alarm_layer, GColorClear);
-    text_layer_set_text_color(alarm_layer, GColorWhite);
-  #endif
+		#if defined(PBL_RECT)
+			text_layer_set_font(alarm_layer, fonts_get_system_font(FONT_KEY_BITHAM_30_BLACK));
+			text_layer_set_background_color(alarm_parent_layer, GColorWhite);
+			text_layer_set_overflow_mode(alarm_layer, GTextOverflowModeWordWrap);
+			text_layer_set_text_color(alarm_layer, GColorBlack);
+		#elif defined(PBL_ROUND)
+			text_layer_set_font(alarm_layer, fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD));
+			text_layer_set_background_color(alarm_parent_layer, GColorClear);
+			text_layer_set_background_color(alarm_layer, GColorClear);
+			text_layer_set_text_color(alarm_layer, GColorWhite);
+		#endif
 
-  alarm_layer_ref = text_layer_get_layer(alarm_layer);
-  layer_add_child(alarm_parent_layer_ref, alarm_layer_ref);
+		alarm_layer_ref = text_layer_get_layer(alarm_layer);
+		layer_add_child(alarm_parent_layer_ref, alarm_layer_ref);
 
-  int text_size = text_layer_get_content_size(alarm_layer).w;
+		int text_size = text_layer_get_content_size(alarm_layer).w;
 
-  image_alarm = gbitmap_create_with_resource(RESOURCE_ID_IMAGE_ALARM);
-  image_layer_alarm = bitmap_layer_create(GRect(((bounds.size.w - 22 - text_size) / 2), alarm_layer_top, 20, 20));
-  bitmap_layer_set_bitmap(image_layer_alarm, image_alarm);
-  bitmap_layer_set_alignment(image_layer_alarm, GAlignLeft);
-  image_layer_alarm_ref = bitmap_layer_get_layer(image_layer_alarm);
-  layer_add_child(alarm_parent_layer_ref, image_layer_alarm_ref);
+		image_alarm = gbitmap_create_with_resource(RESOURCE_ID_IMAGE_ALARM);
+		image_layer_alarm = bitmap_layer_create(GRect(((bounds.size.w - 22 - text_size) / 2), alarm_layer_top, 20, 20));
+		bitmap_layer_set_bitmap(image_layer_alarm, image_alarm);
+		bitmap_layer_set_alignment(image_layer_alarm, GAlignLeft);
+		image_layer_alarm_ref = bitmap_layer_get_layer(image_layer_alarm);
+		layer_add_child(alarm_parent_layer_ref, image_layer_alarm_ref);
 
-  layer_add_child(window_layer, alarm_parent_layer_ref);
+		layer_add_child(window_layer, alarm_parent_layer_ref);
+		
+		alarm_layer_created = true;
+	}
+	else {
+		text_layer_set_text(alarm_layer, text);
+	}
 }
 
 static void alarm_hide() {
-  if (image_layer_alarm) {
+  if (alarm_layer_created) {
+		if (DEBUG) APP_LOG(APP_LOG_LEVEL_DEBUG, "Removing Alarm");
     layer_remove_from_parent(alarm_layer_ref);
     layer_remove_from_parent(image_layer_alarm_ref);
     layer_remove_from_parent(alarm_parent_layer_ref);
@@ -679,6 +696,8 @@ static void alarm_hide() {
     bitmap_layer_destroy(image_layer_alarm);
     text_layer_destroy(alarm_layer);
     text_layer_destroy(alarm_parent_layer);
+		
+		alarm_layer_created = false;
   }
 }
 
@@ -727,14 +746,18 @@ void store_max(AccelData data) {
 // Save settings
 static void save_settings() {
   int ret = persist_write_data(SETTINGS_KEY, &conf, sizeof(conf));
-	if (DEBUG) APP_LOG(APP_LOG_LEVEL_DEBUG, "Config Save: %d | %d, %d, %d, %d", ret,conf.doubleTapExit, conf.enableBackground,conf.enableInfo,conf.enableHeartrate);
+	if (DEBUG) APP_LOG(APP_LOG_LEVEL_DEBUG, "Config Save: %d", ret);
+	
+	// Pop the window
+	window_stack_pop_all(true);
+	window_stack_push(window, true);	
 }
 
 // Load settings
 static void load_settings() {
 	default_settings();
 	int ret = persist_read_data(SETTINGS_KEY, &conf, sizeof(conf));
-	if (DEBUG) APP_LOG(APP_LOG_LEVEL_DEBUG, "Config Load: %d | %d, %d, %d, %d", ret,conf.doubleTapExit, conf.enableBackground,conf.enableInfo,conf.enableHeartrate);
+	if (DEBUG) APP_LOG(APP_LOG_LEVEL_DEBUG, "Config Load: %d", ret);
 }
 
 // minute tick handler
@@ -891,14 +914,20 @@ void in_received_handler(DictionaryIterator *received, void *context) {
     send_timeline_token(timeline_token->value->cstring);
   }
 	
+	Tuple *t_conf[16];
+	for (int i = 0; i < 16; i++){
+		t_conf[i] = dict_find(received, MESSAGE_KEY_uiConf + i);
+	}
+	
 	// Configuration handling	
-	Tuple *t_enableBackground = dict_find(received, MESSAGE_KEY_uiConf); 			if (t_enableBackground) conf.enableBackground = t_enableBackground->value->int32 == 1;
-	Tuple *t_enableInfo = dict_find(received, MESSAGE_KEY_uiConf + 1); 				if (t_enableInfo) conf.enableInfo = t_enableInfo->value->int32 == 1;
-	Tuple *t_enableHeartrate = dict_find(received, MESSAGE_KEY_uiConf + 2); 	if (t_enableHeartrate) conf.enableHeartrate = t_enableHeartrate->value->int32 == 1;
-	Tuple *t_doubleTapExit = dict_find(received, MESSAGE_KEY_uiConf + 3); 		if (t_doubleTapExit) conf.doubleTapExit = t_doubleTapExit->value->int32 == 1;
+	if (t_conf[0]) conf.doubleTapExit = t_conf[0]->value->int32 == 1;
+	if (t_conf[1]) conf.enableBackground = t_conf[1]->value->int32 == 1;
+	if (t_conf[2]) conf.enableInfo = t_conf[2]->value->int32 == 1;
+	if (t_conf[3]) conf.enableHeartrate = t_conf[3]->value->int32 == 1;
+	if (t_conf[4]) conf.timeFont = atoi(t_conf[4]->value->cstring);
 	
 	// Don't bother saving every communication, only if we got config settings.
-	if (t_enableBackground && t_enableInfo && t_enableHeartrate && t_doubleTapExit) {
+	if (t_conf[0]) {
 		if (DEBUG) APP_LOG(APP_LOG_LEVEL_DEBUG, "Config Received: %d, %d, %d, %d", (int) conf.doubleTapExit, (int) conf.enableBackground, (int) conf.enableInfo, (int) conf.enableHeartrate);
 		save_settings();
 	} 
@@ -910,29 +939,31 @@ void in_dropped_handler(AppMessageResult reason, void *context) { APP_LOG(APP_LO
 // Builds the toggle layer
 static void info_update_proc(Layer *layer, GContext *ctx) {
 	if (DEBUG) APP_LOG(APP_LOG_LEVEL_DEBUG, "info_update_proc");
-	
 	GRect bounds = layer_get_bounds(layer);
+	
+	if (conf.enableInfo) {	
 
-	// Bluetooth
-	gbitmap_set_bounds(icon_bt, GRect(bluetoothState ? 0 : 16,0,16,16));
-	graphics_draw_bitmap_in_rect(ctx, icon_bt, PBL_IF_RECT_ELSE(GRect(0,0,16,16), GRect(8,bounds.size.w/2-32,16,16)));
- 
-	// QuietTime
-	gbitmap_set_bounds(icon_qt, GRect(quietTimeState ? 0 : 16,16,16,16));
-	graphics_draw_bitmap_in_rect(ctx, icon_qt, PBL_IF_RECT_ELSE(GRect(16,0,16,16), GRect(8,bounds.size.w/2+16,16,16)));
-	
-		// Battery batteryLevel / BatteryState
-	graphics_draw_bitmap_in_rect(ctx, icon_bat, PBL_IF_RECT_ELSE(GRect(bounds.size.w-32,0,32,16), GRect(5,(bounds.size.w/2)-16,16,32)));
-	graphics_context_set_fill_color(ctx, GColorWhite);
-	graphics_fill_rect(ctx, PBL_IF_RECT_ELSE( GRect(118,5,(batteryLevel*2),6), GRect(10,(bounds.size.h/2)-10+(20-batteryLevel*2),6,(batteryLevel*2)) ), 1, GCornersAll);
-	
-	if (conf.enableHeartrate) {
-		#if defined(PBL_HEALTH)
-			graphics_draw_bitmap_in_rect(ctx, icon_heart, GRect(48,0,16,16));
-			snprintf(info_text_buffer, sizeof(info_text_buffer), "%3d", (int) bpmValue);
-			text_layer_set_text(info_text_layer, info_text_buffer);
-		#endif	
+		// Bluetooth
+		gbitmap_set_bounds(icon_bt, GRect(bluetoothState ? 0 : 16,0,16,16));
+		graphics_draw_bitmap_in_rect(ctx, icon_bt, PBL_IF_RECT_ELSE(GRect(0,0,16,16), GRect(8,bounds.size.w/2-32,16,16)));
+
+		// QuietTime
+		gbitmap_set_bounds(icon_qt, GRect(quietTimeState ? 0 : 16,16,16,16));
+		graphics_draw_bitmap_in_rect(ctx, icon_qt, PBL_IF_RECT_ELSE(GRect(16,0,16,16), GRect(8,bounds.size.w/2+16,16,16)));
+
+			// Battery batteryLevel / BatteryState
+		graphics_draw_bitmap_in_rect(ctx, icon_bat, PBL_IF_RECT_ELSE(GRect(bounds.size.w-32,0,32,16), GRect(5,(bounds.size.w/2)-16,16,32)));
+		graphics_context_set_fill_color(ctx, GColorWhite);
+		graphics_fill_rect(ctx, PBL_IF_RECT_ELSE( GRect(118,5,(batteryLevel*2),6), GRect(10,(bounds.size.h/2)-10+(20-batteryLevel*2),6,(batteryLevel*2)) ), 1, GCornersAll);
 	}
+	#if defined(PBL_HEALTH)
+	if (conf.enableHeartrate) {
+			graphics_draw_bitmap_in_rect(ctx, icon_heart, GRect(48,3,16,16));
+			graphics_context_set_text_color(ctx, GColorWhite);
+			snprintf(hr_text_buffer, sizeof(hr_text_buffer), "%3d", (int) bpmValue);
+			graphics_draw_text(ctx, hr_text_buffer, fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD), GRect(bounds.size.w/2,-7,32,16), GTextOverflowModeWordWrap, GTextAlignmentLeft, NULL);
+	}
+	#endif
 }
 
 // Monitor battery status
@@ -941,7 +972,6 @@ static void handle_battery(BatteryChargeState charge_state) {
 	else if (charge_state.is_plugged) batteryState = 2;
 	else batteryState = 0;	
 	batteryLevel = ((charge_state.charge_percent)/10);
-	if (debug) APP_LOG(APP_LOG_LEVEL_DEBUG, "handle_battery: state %d, level %d", batteryState, batteryLevel);
 	layer_mark_dirty(info_layer);
 }
 
@@ -949,21 +979,23 @@ static void handle_battery(BatteryChargeState charge_state) {
 static void handle_bluetooth(bool connected) {
 	if (debug) APP_LOG(APP_LOG_LEVEL_DEBUG, "handle_bluetooth: %d", connected);
   bluetoothState = connected;
-	//bluetoothStateOld = bluetoothState;
 	layer_mark_dirty(info_layer);
 }
 
 // Handle Health Events
 #if defined(PBL_HEALTH)
-	#if PBL_API_EXISTS(health_service_set_heart_rate_sample_period)
+#if PBL_API_EXISTS(health_service_set_heart_rate_sample_period)
 static void handle_health(HealthEventType event, void *context) {
 		if (debug) APP_LOG(APP_LOG_LEVEL_DEBUG, "update_health : %d", event);
 		if (event == HealthEventSignificantUpdate || event == HealthEventHeartRateUpdate) {
 			bpmValue = health_service_peek_current_value(HealthMetricHeartRateBPM);
+			if (bpmValue != bpmValueOld) {
+				bpmValueOld = bpmValue;
+				layer_mark_dirty(info_layer);
+			}
 		}
-		layer_mark_dirty(info_layer);
 }
-	#endif
+#endif
 #endif
 
 static void timer_callback(void *data) {
@@ -1054,11 +1086,21 @@ static void window_load(Window *window) {
   bitmap_layer_set_alignment(image_layer_pause, GAlignRight);
   layer_add_child(window_layer, bitmap_layer_get_layer(image_layer_pause));
 
-  text_layer = text_layer_create((GRect) { .origin = { 0, 3 }, .size = { bounds.size.w, 80 } });
+  text_layer = text_layer_create((GRect) { .origin = { 0, PBL_IF_RECT_ELSE(15,3) }, .size = { bounds.size.w, 80 } });
   text_layer_set_text_alignment(text_layer, GTextAlignmentCenter);
+	
+	font_w800_42 = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_HOUR_35));
 
   #if defined(PBL_RECT)
-    text_layer_set_font(text_layer, fonts_get_system_font(FONT_KEY_ROBOTO_BOLD_SUBSET_49));
+		if 			(conf.timeFont == 0) text_layer_set_font(text_layer, fonts_get_system_font(FONT_KEY_ROBOTO_BOLD_SUBSET_49));
+		else if (conf.timeFont == 1) text_layer_set_font(text_layer, fonts_get_system_font(FONT_KEY_LECO_42_NUMBERS));
+		else if (conf.timeFont == 2) text_layer_set_font(text_layer, fonts_get_system_font(FONT_KEY_BITHAM_42_LIGHT));
+		else if (conf.timeFont == 3) text_layer_set_font(text_layer, fonts_get_system_font(FONT_KEY_BITHAM_42_MEDIUM_NUMBERS));
+		else if (conf.timeFont == 4) text_layer_set_font(text_layer, fonts_get_system_font(FONT_KEY_BITHAM_42_BOLD));
+		else if (conf.timeFont == 5) {
+			layer_set_frame(text_layer_get_layer(text_layer), GRect(0, 25, bounds.size.w, 80 ));
+			text_layer_set_font(text_layer, font_w800_42);
+		}
   #elif defined(PBL_ROUND)
     text_layer_set_font(text_layer, fonts_get_system_font(FONT_KEY_GOTHIC_28_BOLD));
   #endif
@@ -1071,7 +1113,7 @@ static void window_load(Window *window) {
   pause_layer = text_layer_create(GRect(0, bounds.size.h / 2 - 10, bounds.size.w - 20, bounds.size.h / 2 + 10));
   text_layer_set_text_alignment(pause_layer, GTextAlignmentRight);
   #if defined(PBL_RECT)
-    text_layer_set_font(pause_layer, fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD));
+		text_layer_set_font(pause_layer, fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD));
   #elif defined(PBL_ROUND)
     text_layer_set_font(pause_layer, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD));
   #endif
@@ -1097,16 +1139,7 @@ static void window_load(Window *window) {
 	icon_qt = gbitmap_create_as_sub_bitmap(icon_sprites, GRect(0,16,32,16));
 	icon_bat = gbitmap_create_as_sub_bitmap(icon_sprites, PBL_IF_RECT_ELSE(GRect(0,32,32,16),GRect(16,48,16,32)));
 	icon_heart = gbitmap_create_as_sub_bitmap(icon_sprites, GRect(0,48,16,16));
-	
-	// Create Info Text Layer (Temporary)
-	info_text_layer = text_layer_create(GRect(72,-2,32,16));
-	text_layer_set_text_color(info_text_layer, GColorWhite);
-	text_layer_set_background_color(info_text_layer, GColorClear);
-	text_layer_set_overflow_mode(info_text_layer, GTextOverflowModeWordWrap);
-	text_layer_set_text_alignment(info_text_layer, GTextAlignmentLeft);
-	
-	layer_add_child(info_layer, text_layer_get_layer(info_text_layer));
-	
+		
 	// If infobar is enabled, we register the handlers	
 	if (conf.enableInfo) {
 		battery_state_service_subscribe(handle_battery);
@@ -1114,8 +1147,9 @@ static void window_load(Window *window) {
 		connection_service_subscribe((ConnectionHandlers) {.pebble_app_connection_handler = handle_bluetooth});
 		handle_bluetooth(bluetooth_connection_service_peek());	
 		quietTimeState = quiet_time_is_active();
-
-		if (conf.enableHeartrate) {
+	}
+	
+	if (conf.enableHeartrate) {
 			// subscribe to event handlers
 			#if defined(PBL_HEALTH)
 				#if PBL_API_EXISTS(health_service_set_heart_rate_sample_period)
@@ -1123,11 +1157,10 @@ static void window_load(Window *window) {
 				#endif	
 			#endif
 		}
-	}
 	
 	// Show or hide layers based on settings
 	layer_set_hidden(bitmap_layer_get_layer(image_layer), !conf.enableBackground);
-	layer_set_hidden(info_layer, !conf.enableInfo);
+	layer_set_hidden(info_layer, (!conf.enableInfo && !conf.enableHeartrate));
 
 }
 
@@ -1151,11 +1184,14 @@ static void window_unload(Window *window) {
 	gbitmap_destroy(icon_qt);
 	gbitmap_destroy(icon_bat);
 	gbitmap_destroy(icon_heart);
-	gbitmap_destroy(icon_sprites);
+	gbitmap_destroy(icon_sprites);	
+	//fonts_unload_custom_font(font_w800_42);
 	
-	text_layer_destroy(info_text_layer);
-	layer_destroy(info_layer);
-	
+	battery_state_service_unsubscribe();
+	connection_service_unsubscribe();
+	health_service_events_unsubscribe();
+
+	//layer_destroy(info_layer);	
 }
 
 
@@ -1221,10 +1257,6 @@ static void deinit(void) {
 
   accel_data_service_unsubscribe();
 	
-	battery_state_service_unsubscribe();
-	connection_service_unsubscribe();
-	health_service_events_unsubscribe();
-
   // Reset heart rate sampling period to watch-controlled default
   if (hr) {
       #if defined(PBL_HEALTH)
