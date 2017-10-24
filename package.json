@@ -13,7 +13,8 @@
         "displayName": "Sleep as Android for Pebble",
         "enableMultiJS": true,
         "messageKeys": [
-            "uiConf[16]"
+            "uiConf[16]",
+            "vibeConf[8]"
         ],
         "projectType": "native",
         "resources": {
@@ -73,10 +74,7 @@
         },
         "sdkVersion": "3",
         "targetPlatforms": [
-            "aplite",
-            "basalt",
-            "chalk",
-            "diorite"
+            "aplite"
         ],
         "uuid": "24b0a1e5-f0b1-440d-8e53-8f26688a3f07",
         "watchapp": {

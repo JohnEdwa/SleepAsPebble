@@ -1,7 +1,7 @@
 module.exports = [
   {
     "type": "heading",
-    "defaultValue": "App Configuration"
+    "defaultValue": "Sleep As Pebble configration."
   },
   {
     "type": "text",
@@ -69,11 +69,35 @@ module.exports = [
 					{ 
 					"label": "Casio Segmented",
 					"value": "5"
-				},
-					
+				},					
 				]
 			},	
     ]
+  },
+	{
+		"type": "section",
+		"items": [
+			{
+        "type": "heading",
+        "defaultValue": "Vibration Settings"
+			},
+			{
+				"type": "select",
+				"messageKey": "vibeConf[0]",
+				"defaultValue": "0",
+				"label": "AlarmVibration style",
+				"options": [
+				{ 
+					"label": "Original", 
+					"value": "0"
+				},
+				{ 
+					"label": "Gentle PWM",
+					"value": "1"
+				}			
+				]
+			},		
+		]
   },
   {
     "type": "submit",

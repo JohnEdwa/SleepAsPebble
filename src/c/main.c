@@ -1,7 +1,8 @@
 #include <pebble.h>
 
 #define debug 0
-#define DEBUG 0
+#define DEBUG 1
+#define VIBE 1
 
 // Frequency for old applications
 #define SAMPLING_TIMER_BACKWARDS 9000
@@ -58,6 +59,8 @@ typedef struct ClaySettings {
 	bool enableHeartrate;
 	bool doubleTapExit;
 	unsigned char timeFont;
+	
+	unsigned char alarmVibe;
 } ClaySettings;
 static ClaySettings conf;
 
@@ -68,6 +71,7 @@ static void default_settings() {
 	conf.enableHeartrate = false;
 	conf.doubleTapExit = false;
 	conf.timeFont = 0;
+	conf.alarmVibe = 0;
 }
 
 // info layer vars
@@ -163,41 +167,20 @@ static void alarm_hide();
 static void action_bar_hide(Window *window);
 static bool is_connection_dead();
 
-static uint32_t segments[] = { 800, 400, 800, 400, 800 };
-VibePattern pat = {
-  .durations = segments,
-  .num_segments = ARRAY_LENGTH(segments),
-};
 
+static uint32_t segments1[] = { 800, 400, 800, 400, 800 };
 static uint32_t segments2[] = { 800, 400, 800 };
-VibePattern pat2 = {
-  .durations = segments2,
-  .num_segments = ARRAY_LENGTH(segments2),
-};
-
 static uint32_t segments3[] = { 800, 400, 800, 400, 800 };
-VibePattern pat3 = {
-  .durations = segments3,
-  .num_segments = ARRAY_LENGTH(segments3),
-};
-
 static uint32_t segments4[] = { 800, 400, 800, 400, 800, 400, 800 };
-VibePattern pat4 = {
-  .durations = segments4,
-  .num_segments = ARRAY_LENGTH(segments4),
-};
-
 static uint32_t segments5[] = { 800, 400, 800, 400, 800, 400, 800, 400, 800 };
-VibePattern pat5 = {
-  .durations = segments5,
-  .num_segments = ARRAY_LENGTH(segments5),
-};
-
 static uint32_t segments10[] = { 800, 400, 800, 400, 800, 400, 800, 400, 800, 400, 800, 400, 800, 400, 800, 400, 800, 400, 800 };
-VibePattern pat10 = {
-  .durations = segments10,
-  .num_segments = ARRAY_LENGTH(segments10),
-};
+
+VibePattern pat = {  .durations = segments1,  .num_segments = ARRAY_LENGTH(segments1),};
+VibePattern pat2 = {  .durations = segments2,  .num_segments = ARRAY_LENGTH(segments2),};
+VibePattern pat3 = {  .durations = segments3,  .num_segments = ARRAY_LENGTH(segments3),};
+VibePattern pat4 = {  .durations = segments4,  .num_segments = ARRAY_LENGTH(segments4),};
+VibePattern pat5 = {  .durations = segments5,  .num_segments = ARRAY_LENGTH(segments5),};
+VibePattern pat10 = {  .durations = segments10,  .num_segments = ARRAY_LENGTH(segments10),};
 
 // Helper methods
 static unsigned short get_display_hour(unsigned short hour) {
@@ -243,6 +226,79 @@ static int get_timezone_offset() {
 
     }
     return timezoneoffset;
+}
+
+// Custom Vibe strength pulses. Currently can only do identical pulses in a row.
+// Pebble Vibe limits: maximum 265 (or so) segments and 10 seconds.
+void vibes_pwm(int8_t strength, uint16_t duration, int count, int delay) {
+
+	uint16_t totalSegments = 0; 
+	uint16_t currentDuration = 0;
+	uint16_t totalVibeDuration = duration * count;	// Ignoring delay times
+	uint8_t SCALE = (totalVibeDuration/1200)+1; // We use this to always keep under 265 segments.
+	
+	if (strength == 0 || count == 0) {
+		// Why did you ask us to do nothing?
+		vibes_cancel();
+		return;
+	}	
+	else if (strength >= 10) {
+		// Full strenght, so we utilize the built in functions for speed and reliability
+		totalSegments = count*2;
+		uint32_t pwm_segments[totalSegments];		
+		if (DEBUG) APP_LOG(APP_LOG_LEVEL_INFO, "TotalSegments: %d", totalSegments);
+		for (uint16_t i = 0; i < totalSegments; i+=2) {
+			if (DEBUG) APP_LOG(APP_LOG_LEVEL_INFO, "%d: %d,%d", i, duration, delay);
+			pwm_segments[i] = duration;
+			pwm_segments[i+1] = delay;
+		}
+		vibes_cancel();
+		VibePattern pwm_pat = {.durations = pwm_segments, .num_segments = totalSegments};
+		vibes_enqueue_custom_pattern(pwm_pat);
+	}
+	else {
+		// And here's where the fun starts
+		uint16_t loopSegments = duration/(5*SCALE);
+		if (loopSegments % 2 != 0) loopSegments++;
+		totalSegments = loopSegments*(count)+(count*3); // We need to make space for the delays too.
+		
+		// vibes_enqueue_custom_pattern has a hard limit of under 300 segments.
+		if (totalSegments >= 265) {
+			APP_LOG(APP_LOG_LEVEL_ERROR, "VibePattern segment count over 265 (%d, dur %d, scale %d), we will crash if we vibe!", totalSegments, totalVibeDuration, SCALE);
+			vibes_long_pulse(); // We were asked to vibe for a reason so lets do at least something.
+			return;
+		}
+		APP_LOG(APP_LOG_LEVEL_INFO, "(%d, dur %d, scale %d)", totalSegments, totalVibeDuration, SCALE);
+		uint32_t pwm_segments[totalSegments];
+		uint16_t currentSegment = 0;
+		if (DEBUG) APP_LOG(APP_LOG_LEVEL_INFO, "Segments: loop %d, total %d, size: %d, scale: %d", (int) loopSegments, (int) totalSegments, (int) sizeof(pwm_segments), SCALE);
+		
+		for (uint8_t j = 0; j < count; j++) {
+			for(uint16_t i = 0; i  < loopSegments/2; i++) {
+				if (currentDuration+(10*SCALE) <= 9999) {
+					currentDuration = currentDuration+(10*SCALE);
+					pwm_segments[currentSegment] = strength*SCALE;
+					pwm_segments[currentSegment+1] = 10*SCALE - strength*SCALE;
+					currentSegment = currentSegment+2;
+				}
+				else APP_LOG(APP_LOG_LEVEL_ERROR, "Vibe pattern too long!");
+			}
+			if (count > 1) {
+				if (currentDuration+delay <= 9999) {
+					//if (DEBUG) APP_LOG(APP_LOG_LEVEL_DEBUG, "Adding delay to %d and %d", currentSegment, currentSegment+1);
+					currentDuration = currentDuration+delay;
+					pwm_segments[currentSegment] = 0;
+					pwm_segments[currentSegment+1] = delay;
+					currentSegment = currentSegment+2;
+					//if (DEBUG) APP_LOG(APP_LOG_LEVEL_DEBUG, "Current %d", currentSegment);
+				}
+				else APP_LOG(APP_LOG_LEVEL_ERROR, "Vibe pattern too long!");
+			}
+		}
+		vibes_cancel();
+		VibePattern pwm_pat = {.durations = pwm_segments, .num_segments = totalSegments};
+		vibes_enqueue_custom_pattern(pwm_pat);
+	}
 }
 
 // UI helper methods
@@ -766,7 +822,8 @@ void store_max(AccelData data) {
 // Save settings
 static void save_settings() {
   int ret = persist_write_data(SETTINGS_KEY, &conf, sizeof(conf));
-	if (DEBUG) APP_LOG(APP_LOG_LEVEL_DEBUG, "Conf - Persistent Settings Saved | %d", ret);
+	if (DEBUG) APP_LOG(APP_LOG_LEVEL_DEBUG, "Conf - Persistent Settings Saved | %d / Vibe: %d", ret, conf.alarmVibe);
+	
 	
 	// Pop the window
 	window_stack_pop_all(true);
@@ -906,28 +963,16 @@ void in_received_handler(DictionaryIterator *received, void *context) {
   }
 
   if (hint) {
-      hint_repeat = hint->value->uint8;
+		hint_repeat = hint->value->uint8;
+		if (DEBUG) APP_LOG(APP_LOG_LEVEL_DEBUG, "Hint vibe event?");
       switch (hint_repeat) {
-        case 1:
-            vibes_long_pulse();
-            break;
-        case 2:
-            vibes_enqueue_custom_pattern(pat2);
-            break;
-        case 3:
-            vibes_enqueue_custom_pattern(pat3);
-            break;
-        case 4:
-            vibes_enqueue_custom_pattern(pat4);
-            break;
-        case 5:
-            vibes_enqueue_custom_pattern(pat5);
-            break;
-        case 10:
-            vibes_enqueue_custom_pattern(pat10);
-            break;
-        default:
-            vibes_long_pulse();
+        case 1: vibes_long_pulse(); break;
+        case 2: vibes_enqueue_custom_pattern(pat2); break;
+        case 3: vibes_enqueue_custom_pattern(pat3); break;
+        case 4: vibes_enqueue_custom_pattern(pat4); break;
+        case 5: vibes_enqueue_custom_pattern(pat5); break;
+        case 10:vibes_enqueue_custom_pattern(pat10); break;
+        default: vibes_long_pulse();
       }
   }
 
@@ -935,20 +980,27 @@ void in_received_handler(DictionaryIterator *received, void *context) {
     send_timeline_token(timeline_token->value->cstring);
   }
 	
-	Tuple *t_conf[16];
+		// Configuration handling	
+	Tuple *t_uiConf[16];
 	for (int i = 0; i < 16; i++){
-		t_conf[i] = dict_find(received, MESSAGE_KEY_uiConf + i);
+		t_uiConf[i] = dict_find(received, MESSAGE_KEY_uiConf + i);
 	}
 	
-	// Configuration handling	
-	if (t_conf[0]) conf.doubleTapExit = t_conf[0]->value->int32 == 1;
-	if (t_conf[1]) conf.enableBackground = t_conf[1]->value->int32 == 1;
-	if (t_conf[2]) conf.enableInfo = t_conf[2]->value->int32 == 1;
-	if (t_conf[3]) conf.enableHeartrate = t_conf[3]->value->int32 == 1;
-	if (t_conf[4]) conf.timeFont = atoi(t_conf[4]->value->cstring);
+	if (t_uiConf[0]) conf.doubleTapExit = t_uiConf[0]->value->int32 == 1;
+	if (t_uiConf[1]) conf.enableBackground = t_uiConf[1]->value->int32 == 1;
+	if (t_uiConf[2]) conf.enableInfo = t_uiConf[2]->value->int32 == 1;
+	if (t_uiConf[3]) conf.enableHeartrate = t_uiConf[3]->value->int32 == 1;
+	if (t_uiConf[4]) conf.timeFont = atoi(t_uiConf[4]->value->cstring);
+	
+	Tuple *t_vibeConf[8];
+	for (int i = 0; i < 16; i++){
+		t_vibeConf[i] = dict_find(received, MESSAGE_KEY_vibeConf + i);
+	}
+	
+	if (t_vibeConf[0]) conf.alarmVibe = atoi(t_vibeConf[0]->value->cstring);
 	
 	// Don't bother saving every communication, only if we got config settings.
-	if (t_conf[0]) {
+	if (t_uiConf[0] && t_vibeConf[0]) {
 		save_settings();
 	} 
 }
@@ -1053,8 +1105,40 @@ static void timer_callback(void *data) {
     alarm_counter++;
 
     int alarm_time_elapsed = ((alarm_counter - 1) * SAMPLING_TIMER);
+		
+		/*
+		// Some possible patterns.
+		case 1: vibes_pwm(4,250,1,0); break;
+		case 2: vibes_pwm(4,300,2,1000); break;
+		case 3: vibes_pwm(5,400,1,0); break;
+		case 4: vibes_pwm(5,400,3,400); break;
+		case 5: vibes_pwm(6,250,3,50); break;
+		case 6: vibes_pwm(6,800,2,600); break;
+		case 7: vibes_pwm(8,250,6,125); break;
+		case 8: vibes_pwm(10,500,5,250); break;
+		default: break;
+		*/
 
     if (alarm_delay > -1 && alarm_time_elapsed >= alarm_delay) {
+			if (conf.alarmVibe == 1) {
+				if (DEBUG) APP_LOG(APP_LOG_LEVEL_DEBUG, "Vibing for alarm using GentlePWM");
+				if (alarm_time_elapsed - alarm_delay >= 100000) {
+          //vibes_pwm(10,500,6,175);
+					vibes_enqueue_custom_pattern(pat5);
+        } else if (alarm_time_elapsed - alarm_delay >= 60000) {
+          vibes_pwm(8,250,6,125);
+        } else if (alarm_time_elapsed - alarm_delay >= 40000) {
+          vibes_pwm(6,650,3,400);	
+        } else if (alarm_time_elapsed - alarm_delay >= 20000) {
+          vibes_pwm(5,400,2,1500);
+				} else if (alarm_time_elapsed - alarm_delay >= 10000) {
+					vibes_pwm(4,300,2,1750);
+        } else {
+          vibes_pwm(4,250,2,2000);
+        }
+			}
+			else {
+				if (DEBUG) APP_LOG(APP_LOG_LEVEL_DEBUG, "Vibing for alarm using default patterns");
         if (alarm_time_elapsed - alarm_delay >= 80000) {
           vibes_enqueue_custom_pattern(pat5);
         } else if (alarm_time_elapsed - alarm_delay >= 40000) {
@@ -1064,6 +1148,7 @@ static void timer_callback(void *data) {
         } else {
           vibes_short_pulse();
         }
+			}
     }
 
 
