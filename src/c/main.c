@@ -2,7 +2,6 @@
 
 #define debug 0
 #define DEBUG 1
-#define VIBE 1
 
 // Frequency for old applications
 #define SAMPLING_TIMER_BACKWARDS 9000
@@ -260,7 +259,7 @@ void vibes_pwm(int8_t strength, uint16_t duration, int count, int delay) {
 		// And here's where the fun starts
 		uint16_t loopSegments = duration/(5*SCALE);
 		if (loopSegments % 2 != 0) loopSegments++;
-		totalSegments = loopSegments*(count)+(count*3); // We need to make space for the delays too.
+		totalSegments = loopSegments*(count)+(count*2); // We need to make space for the delays too.
 		
 		// vibes_enqueue_custom_pattern has a hard limit of under 300 segments.
 		if (totalSegments >= 265) {
@@ -271,11 +270,12 @@ void vibes_pwm(int8_t strength, uint16_t duration, int count, int delay) {
 		APP_LOG(APP_LOG_LEVEL_INFO, "(%d, dur %d, scale %d)", totalSegments, totalVibeDuration, SCALE);
 		uint32_t pwm_segments[totalSegments];
 		uint16_t currentSegment = 0;
-		if (DEBUG) APP_LOG(APP_LOG_LEVEL_INFO, "Segments: loop %d, total %d, size: %d, scale: %d", (int) loopSegments, (int) totalSegments, (int) sizeof(pwm_segments), SCALE);
+		//if (DEBUG) APP_LOG(APP_LOG_LEVEL_INFO, "Segments: loop %d, total %d, size: %d, scale: %d", (int) loopSegments, (int) totalSegments, (int) sizeof(pwm_segments), SCALE);
 		
 		for (uint8_t j = 0; j < count; j++) {
 			for(uint16_t i = 0; i  < loopSegments/2; i++) {
 				if (currentDuration+(10*SCALE) <= 9999) {
+					//if (DEBUG) APP_LOG(APP_LOG_LEVEL_DEBUG, "%d (%d): %d, %d",i, loopSegments, currentSegment, currentSegment+1);
 					currentDuration = currentDuration+(10*SCALE);
 					pwm_segments[currentSegment] = strength*SCALE;
 					pwm_segments[currentSegment+1] = 10*SCALE - strength*SCALE;
@@ -290,7 +290,6 @@ void vibes_pwm(int8_t strength, uint16_t duration, int count, int delay) {
 					pwm_segments[currentSegment] = 0;
 					pwm_segments[currentSegment+1] = delay;
 					currentSegment = currentSegment+2;
-					//if (DEBUG) APP_LOG(APP_LOG_LEVEL_DEBUG, "Current %d", currentSegment);
 				}
 				else APP_LOG(APP_LOG_LEVEL_ERROR, "Vibe pattern too long!");
 			}
@@ -1106,35 +1105,27 @@ static void timer_callback(void *data) {
 
     int alarm_time_elapsed = ((alarm_counter - 1) * SAMPLING_TIMER);
 		
-		/*
-		// Some possible patterns.
-		case 1: vibes_pwm(4,250,1,0); break;
-		case 2: vibes_pwm(4,300,2,1000); break;
-		case 3: vibes_pwm(5,400,1,0); break;
-		case 4: vibes_pwm(5,400,3,400); break;
-		case 5: vibes_pwm(6,250,3,50); break;
-		case 6: vibes_pwm(6,800,2,600); break;
-		case 7: vibes_pwm(8,250,6,125); break;
-		case 8: vibes_pwm(10,500,5,250); break;
-		default: break;
-		*/
-
     if (alarm_delay > -1 && alarm_time_elapsed >= alarm_delay) {
 			if (conf.alarmVibe == 1) {
-				if (DEBUG) APP_LOG(APP_LOG_LEVEL_DEBUG, "Vibing for alarm using GentlePWM");
 				if (alarm_time_elapsed - alarm_delay >= 100000) {
           //vibes_pwm(10,500,6,175);
+					if (DEBUG) APP_LOG(APP_LOG_LEVEL_DEBUG, "Vibing for alarm using GentlePWM 6");
 					vibes_enqueue_custom_pattern(pat5);
-        } else if (alarm_time_elapsed - alarm_delay >= 60000) {
+        } else if (alarm_time_elapsed - alarm_delay >= 80000) {
           vibes_pwm(8,250,6,125);
+					if (DEBUG) APP_LOG(APP_LOG_LEVEL_DEBUG, "Vibing for alarm using GentlePWM 5");
+        } else if (alarm_time_elapsed - alarm_delay >= 60000) {
+          vibes_pwm(6,650,3,400);
+					if (DEBUG) APP_LOG(APP_LOG_LEVEL_DEBUG, "Vibing for alarm using GentlePWM 4");
         } else if (alarm_time_elapsed - alarm_delay >= 40000) {
-          vibes_pwm(6,650,3,400);	
-        } else if (alarm_time_elapsed - alarm_delay >= 20000) {
           vibes_pwm(5,400,2,1500);
-				} else if (alarm_time_elapsed - alarm_delay >= 10000) {
+					if (DEBUG) APP_LOG(APP_LOG_LEVEL_DEBUG, "Vibing for alarm using GentlePWM 3");
+				} else if (alarm_time_elapsed - alarm_delay >= 20000) {
 					vibes_pwm(4,300,2,1750);
+					if (DEBUG) APP_LOG(APP_LOG_LEVEL_DEBUG, "Vibing for alarm using GentlePWM 2");
         } else {
           vibes_pwm(4,250,2,2000);
+					if (DEBUG) APP_LOG(APP_LOG_LEVEL_DEBUG, "Vibing for alarm using GentlePWM 1");
         }
 			}
 			else {

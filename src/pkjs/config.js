@@ -92,7 +92,7 @@ module.exports = [
 					"value": "0"
 				},
 				{ 
-					"label": "Gentle PWM",
+					"label": "Gentler PWM",
 					"value": "1"
 				}			
 				]
