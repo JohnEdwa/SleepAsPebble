@@ -4,17 +4,18 @@
         "pebble-clay": "^1.0.4"
     },
     "keywords": [],
-    "name": "sleep-as-android",
+    "name": "sleep-as-android-beta",
     "pebble": {
         "capabilities": [
             "configurable",
             "health"
         ],
-        "displayName": "Sleep as Android for Pebble",
+        "displayName": "Sleep as Android for Pebble [BETA]",
         "enableMultiJS": true,
         "messageKeys": [
             "uiConf[16]",
-            "vibeConf[8]"
+            "vibeConf[8]",
+            "timeline_token"
         ],
         "projectType": "native",
         "resources": {
@@ -75,9 +76,11 @@
         "sdkVersion": "3",
         "targetPlatforms": [
             "aplite",
+            "basalt",
+            "chalk",
             "diorite"
         ],
-        "uuid": "24b0a1e5-f0b1-440d-8e53-8f26688a3f07",
+        "uuid": "05dd0d76-70b1-491a-a27f-b6bdfee5b943",
         "watchapp": {
             "watchface": false
         }

@@ -1,7 +1,7 @@
 #include <pebble.h>
 
 #define debug 0
-#define DEBUG 1
+#define DEBUG 0
 
 // Frequency for old applications
 #define SAMPLING_TIMER_BACKWARDS 9000
@@ -45,10 +45,12 @@ enum {
     MSG_KEY_ACCEL_BATCH_NEW = 9,
 };
 
+/*
 // Messages coming from js
 enum {
     MSG_KEY_TIMELINE_TOKEN = 999,
 };
+*/
 
 // Clay settings struct
 #define SETTINGS_KEY 1
@@ -89,9 +91,7 @@ static bool last = false;
 
 static bool hr = false;
 
-static int last_x;
-static int last_y;
-static int last_z;
+static int last_x, last_y, last_z;
 
 static int max_sum;
 static int max_sum_new;
@@ -102,14 +102,9 @@ static int pending_values[MAX_QUEUED_VALUES];
 static int pending_values_new[MAX_QUEUED_VALUES];
 
 static bool suspended = false;
-
 static int suspend_till_ts = false;
-
-// Time when the next alarm should fire
-static int scheduled_alarm_ts = 0;
-
-// Timestamp of last received message from phone.
-static int last_received_msg_ts = 0;
+static int scheduled_alarm_ts = 0; // Time when the next alarm should fire
+static int last_received_msg_ts = 0; // Timestamp of last received message from phone.
 
 static bool acked = true;
 
@@ -119,15 +114,12 @@ static bool hide_ab_with_next_tick = false;
 static bool alarm = false;
 static int alarm_counter = 0;
 static int alarm_delay = 0;
-static char alarm_buf[8] = {0};
 
 static int postponed_action = -1;
 
 static char* timeline_token;
 
 static int current_hr = 0;
-
-
 
 // POINTERS
 static AppTimer *timer;
@@ -155,16 +147,14 @@ static BitmapLayer *image_layer;
 static BitmapLayer *image_layer_pause;
 static BitmapLayer *image_layer_alarm;
 
-static Layer *image_layer_alarm_ref;
-static Layer *alarm_layer_ref;
-static Layer *alarm_parent_layer_ref;
-
 static Layer *info_layer;
 
 // Forward declarations
 static void alarm_hide();
 static void action_bar_hide(Window *window);
 static bool is_connection_dead();
+static void send_action_using_app_message(int action);
+static void send_timeline_token(char* token);
 
 
 static uint32_t segments1[] = { 800, 400, 800, 400, 800 };
@@ -173,7 +163,6 @@ static uint32_t segments3[] = { 800, 400, 800, 400, 800 };
 static uint32_t segments4[] = { 800, 400, 800, 400, 800, 400, 800 };
 static uint32_t segments5[] = { 800, 400, 800, 400, 800, 400, 800, 400, 800 };
 static uint32_t segments10[] = { 800, 400, 800, 400, 800, 400, 800, 400, 800, 400, 800, 400, 800, 400, 800, 400, 800, 400, 800 };
-
 VibePattern pat = {  .durations = segments1,  .num_segments = ARRAY_LENGTH(segments1),};
 VibePattern pat2 = {  .durations = segments2,  .num_segments = ARRAY_LENGTH(segments2),};
 VibePattern pat3 = {  .durations = segments3,  .num_segments = ARRAY_LENGTH(segments3),};
@@ -182,21 +171,17 @@ VibePattern pat5 = {  .durations = segments5,  .num_segments = ARRAY_LENGTH(segm
 VibePattern pat10 = {  .durations = segments10,  .num_segments = ARRAY_LENGTH(segments10),};
 
 // Helper methods
+// Returns the hour value
 static unsigned short get_display_hour(unsigned short hour) {
-  if (clock_is_24h_style()) {
-    return hour;
-  }
+  if (clock_is_24h_style()) { return hour; }
   unsigned short display_hour = hour % 12;
   return display_hour ? display_hour : 12;
 }
 
-int absolute(int number) {
-    if (number < 0) {
-        return -number;
-    }
-    return number;
-}
+// Returns the absolute value of number
+int absolute(int number) { if (number < 0) { return -number; } return number; }
 
+// Returns Timezone Offset
 static int get_timezone_offset() {
     int timezoneoffset = 0;
     time_t now = time(NULL);
@@ -207,15 +192,16 @@ static int get_timezone_offset() {
 
       timezoneoffset = 60 * (60 * (24 * (tick_time->tm_wday - gm_time->tm_wday) + tick_time->tm_hour - gm_time->tm_hour) + tick_time->tm_min - gm_time->tm_min);
 
-      if (debug) APP_LOG(APP_LOG_LEVEL_DEBUG, "WD LT %d", tick_time->tm_wday);
-      if (debug) APP_LOG(APP_LOG_LEVEL_DEBUG, "WD GM %d", gm_time->tm_wday);
-      if (debug) APP_LOG(APP_LOG_LEVEL_DEBUG, "HR LT %d", tick_time->tm_hour);
-      if (debug) APP_LOG(APP_LOG_LEVEL_DEBUG, "HR GM %d", gm_time->tm_hour);
-      if (debug) APP_LOG(APP_LOG_LEVEL_DEBUG, "MN LT %d", tick_time->tm_min);
-      if (debug) APP_LOG(APP_LOG_LEVEL_DEBUG, "MN GM %d", gm_time->tm_min);
-
-      if (debug) APP_LOG(APP_LOG_LEVEL_DEBUG, "OFFSET HR %d", timezoneoffset / 60);
-      if (debug) APP_LOG(APP_LOG_LEVEL_DEBUG, "OFFSET TS %d", timezoneoffset);
+			if (debug) {
+				APP_LOG(APP_LOG_LEVEL_DEBUG, "WD LT %d", tick_time->tm_wday);
+				APP_LOG(APP_LOG_LEVEL_DEBUG, "WD GM %d", gm_time->tm_wday);
+				APP_LOG(APP_LOG_LEVEL_DEBUG, "HR LT %d", tick_time->tm_hour);
+				APP_LOG(APP_LOG_LEVEL_DEBUG, "HR GM %d", gm_time->tm_hour);
+				APP_LOG(APP_LOG_LEVEL_DEBUG, "MN LT %d", tick_time->tm_min);
+				APP_LOG(APP_LOG_LEVEL_DEBUG, "MN GM %d", gm_time->tm_min);
+				APP_LOG(APP_LOG_LEVEL_DEBUG, "OFFSET HR %d", timezoneoffset / 60);
+				APP_LOG(APP_LOG_LEVEL_DEBUG, "OFFSET TS %d", timezoneoffset);
+			}
 
       // Correct for transitions at the end of the week.
       if (timezoneoffset > SECONDS_IN_WEEK/2) timezoneoffset -= SECONDS_IN_WEEK;
@@ -301,23 +287,17 @@ void vibes_pwm(int8_t strength, uint16_t duration, int count, int delay) {
 }
 
 // UI helper methods
-// update time
+// Update the main time layer
 static void display_time(struct tm *tick_time) {
     if (text_layer != NULL) {
       static char time_text[] = "00:00";
-//      clock_copy_time_string(time_text, sizeof(time_text));
-
-      if (clock_is_24h_style()) {
-        strftime(time_text, sizeof(time_text), "%R", tick_time);
-      } else {
-        strftime(time_text, sizeof(time_text), "%r", tick_time);
-      }
+      if (clock_is_24h_style()) { strftime(time_text, sizeof(time_text), "%R", tick_time); }
+			else { strftime(time_text, sizeof(time_text), "%r", tick_time); }
       text_layer_set_text(text_layer, time_text);
     }
 }
 
-// UI helper methods
-// update time
+// Display pause time
 static void display_pause() {
   if (pause_layer != NULL) {
     time_t now = time(NULL);
@@ -333,10 +313,12 @@ static void display_pause() {
 
     pause_time = pause_time - timezoneoffset;
 
-    if (debug) APP_LOG(APP_LOG_LEVEL_DEBUG, "Timezone offset %d", timezoneoffset);
-    if (debug) APP_LOG(APP_LOG_LEVEL_DEBUG, "Pause time %d", pause_time);
-    if (debug) APP_LOG(APP_LOG_LEVEL_DEBUG, "Suspend %d", suspend_till_ts);
-    if (debug) APP_LOG(APP_LOG_LEVEL_DEBUG, "Now %d", (int) time(NULL));
+		if (debug) {
+			APP_LOG(APP_LOG_LEVEL_DEBUG, "Timezone offset %d", timezoneoffset);
+			APP_LOG(APP_LOG_LEVEL_DEBUG, "Pause time %d", pause_time);
+			APP_LOG(APP_LOG_LEVEL_DEBUG, "Suspend %d", suspend_till_ts);
+			APP_LOG(APP_LOG_LEVEL_DEBUG, "Now %d", (int) time(NULL));
+		}
 
     if (suspend_till_ts == 0 || pause_time <= 0) {
       text_layer_set_text(pause_layer, "");
@@ -357,13 +339,8 @@ static void display_pause() {
 
 // send data
 static void send_data_using_app_message() {
-  if (!acked) {
-    return;
-  }
-
-  if (alarm) {
-    return;
-  }
+  if (!acked) { return; }
+  if (alarm) { return; }
 
   DictionaryIterator *iter;
   AppMessageResult app_res = app_message_outbox_begin(&iter);
@@ -374,15 +351,17 @@ static void send_data_using_app_message() {
     return;
   }
 
-//  if (pending_values_count == 1) {
-//    // Use old message for single value batches, so that we are backwards compatible
-//    Tuplet value = TupletInteger(MSG_KEY_ACCEL, pending_values[0]);
-//    DictionaryResult res = dict_write_tuplet(iter, &value);
-//    if (res != DICT_OK) {
-//      APP_LOG(APP_LOG_LEVEL_ERROR, "Dict write failed with err: %d", res);
-//      return;
-//    }
-//  } else {
+/*	
+	if (pending_values_count == 1) {
+		// Use old message for single value batches, so that we are backwards compatible
+		Tuplet value = TupletInteger(MSG_KEY_ACCEL, pending_values[0]);
+		DictionaryResult res = dict_write_tuplet(iter, &value);
+		if (res != DICT_OK) {
+			APP_LOG(APP_LOG_LEVEL_ERROR, "Dict write failed with err: %d", res);
+			return;
+		}
+	} else {
+*/
     uint8_t out_data[pending_values_count * 2];
     for (int i = 0; i < pending_values_count; i++) {
       out_data[2 * i] = pending_values[i] / 127;
@@ -413,7 +392,6 @@ static void send_data_using_app_message() {
     #if defined(PBL_HEALTH)
      #if PBL_API_EXISTS(health_service_peek_current_value)
         current_hr = (int) health_service_peek_current_value(HealthMetricHeartRateBPM);
-
         Tuplet hr_value = TupletInteger(MSG_KEY_HR, current_hr);
         DictionaryResult res2 = dict_write_tuplet(iter, &hr_value);
         if (res2 != DICT_OK) {
@@ -423,17 +401,12 @@ static void send_data_using_app_message() {
       #endif
     #endif
   }
-//  APP_LOG(APP_LOG_LEVEL_DEBUG, "Tuplet write result: %d", res);
 
-  if (app_message_outbox_send() == APP_MSG_OK) {
+	if (app_message_outbox_send() == APP_MSG_OK) {
     acked = false;
     pending_values_count = 0;
   }
-
-
 }
-
-static void send_action_using_app_message(int action);
 
 // resend action message later on
 static void action_acked_timer_callback(void *data) {
@@ -442,8 +415,6 @@ static void action_acked_timer_callback(void *data) {
     send_action_using_app_message(postponed_action);
   }
 }
-
-static void send_timeline_token(char* token);
 
 // resend action message later on
 static void resend_token_callback(void *data) {
@@ -486,7 +457,7 @@ static void send_action_using_app_message(int action) {
 
 }
 
-// send action
+// Send timeline token to Phone
 static void send_timeline_token(char* token) {
   if (!acked) {
     timeline_token = token;
@@ -505,80 +476,25 @@ static void send_timeline_token(char* token) {
   }
 
   APP_LOG(APP_LOG_LEVEL_DEBUG, "Timeline token: %s", token);
-  Tuplet value = TupletCString(MSG_KEY_TIMELINE_TOKEN, token);
+  Tuplet value = TupletCString(MESSAGE_KEY_timeline_token, token);
   DictionaryResult res = dict_write_tuplet(iter, &value);
   if (res != DICT_OK) {
     APP_LOG(APP_LOG_LEVEL_ERROR, "Dict write failed with err: %d", res);
     return;
   }
 
-  if (app_message_outbox_send() == APP_MSG_OK) {
-    acked = false;
-  } else {
-      action_acked_timer = app_timer_register(1000, resend_token_callback, NULL);
-  }
-
+  if (app_message_outbox_send() == APP_MSG_OK) { acked = false; }
+	else { action_acked_timer = app_timer_register(1000, resend_token_callback, NULL); }
 }
 
+// Stops local alarm
 static void stopAlarm() {
     alarm = false;
     alarm_counter = 0;
     if (debug) APP_LOG(APP_LOG_LEVEL_DEBUG, "Stopping local alarm vibe");
 }
 
-// ACTIONBAR
-
-/*
-static void up_click_handler(ClickRecognizerRef recognizer, void *context) {
-  if (debug) APP_LOG(APP_LOG_LEVEL_DEBUG, "SNOOZE");
-
-  // Even snooze will stop current alarm. We do not support really snoozing on watch without phone.
-  scheduled_alarm_ts = 0;
-  if (alarm) {
-    if (debug) APP_LOG(APP_LOG_LEVEL_DEBUG, "SNOOZE");
-    send_action_using_app_message(MSG_KEY_SNOOZE);
-      stopAlarm();
-      hide_ab_with_next_tick = true;
-    }
-}
-
-static void down_click_handler(ClickRecognizerRef recognizer, void *context) {
-  if (debug) APP_LOG(APP_LOG_LEVEL_DEBUG, "DISMISS");
-
-  scheduled_alarm_ts = 0;
-  if (alarm) {
-    if (debug) APP_LOG(APP_LOG_LEVEL_DEBUG, "DISMISS");
-    send_action_using_app_message(MSG_KEY_DISMISS);
-
-//    stopAlarm();
-//    hide_ab_with_next_tick = true;
-  }
-}
-
-static void select_click_handler(ClickRecognizerRef recognizer, void *context) {
-  if (!alarm) {
-    send_action_using_app_message(MSG_KEY_PAUSE);
-  } else {
-    if (debug) APP_LOG(APP_LOG_LEVEL_DEBUG, "Not doing pause alarm active");
-  }
-}
-
-// Capture the back button to stop quitting the app accidentally, but do so on double tap
-static void back_click_handler(ClickRecognizerRef recognizer, void *context) {
-	APP_LOG(APP_LOG_LEVEL_DEBUG, "Back click provider");
-  window_stack_pop_all(true);
-}
-
-static void select_long_click_handler(ClickRecognizerRef recognizer, void *context) {
-  if (!alarm) {
-    send_action_using_app_message(MSG_KEY_RESUME);
-  } else {
-    if (debug) APP_LOG(APP_LOG_LEVEL_DEBUG, "Not doing resume alarm active");
-  }
-}
-*/
-
-
+// Handles single click events
 static void single_click_handler(ClickRecognizerRef recognizer, void *context) {	
 	switch (click_recognizer_get_button_id(recognizer)) {
 		case BUTTON_ID_UP:
@@ -609,6 +525,7 @@ static void single_click_handler(ClickRecognizerRef recognizer, void *context) {
 	}
 }
 
+// Handles long click events
 static void long_click_handler(ClickRecognizerRef recognizer, void *context) {
 	switch (click_recognizer_get_button_id(recognizer)) {
 		case BUTTON_ID_SELECT:
@@ -622,6 +539,7 @@ static void long_click_handler(ClickRecognizerRef recognizer, void *context) {
 	}
 }
 
+// Handles multi click events
 static void multi_click_handler(ClickRecognizerRef recognizer, void *context) {
 	switch (click_recognizer_get_button_id(recognizer)) {
 		case BUTTON_ID_BACK:
@@ -631,20 +549,21 @@ static void multi_click_handler(ClickRecognizerRef recognizer, void *context) {
 	}
 }
 
+// Button config for the action bar
 static void config_provider_ab(void *ctx) {
   if (debug) APP_LOG(APP_LOG_LEVEL_DEBUG, "Click provider");
   window_single_click_subscribe(BUTTON_ID_UP, single_click_handler);
   window_single_click_subscribe(BUTTON_ID_DOWN, single_click_handler);
 }
 
+// Button config for other events
 static void config_provider(void *ctx) {
   window_single_click_subscribe(BUTTON_ID_SELECT, single_click_handler);
   window_long_click_subscribe(BUTTON_ID_SELECT, 700, long_click_handler, NULL);
 	if (conf.doubleTapExit) window_multi_click_subscribe(BUTTON_ID_BACK, 2, 0, 0, true, multi_click_handler);
-//  window_single_click_subscribe(BUTTON_ID_UP, up_click_handler);
-//  window_single_click_subscribe(BUTTON_ID_DOWN, down_click_handler);
 }
 
+// Create and show the action bar layer
 static void action_bar_show(Window *window) {
   action_bar_layer = action_bar_layer_create();
   if (debug) APP_LOG(APP_LOG_LEVEL_DEBUG, "Click provider setup");
@@ -658,16 +577,14 @@ static void action_bar_show(Window *window) {
   action_bar_layer_set_icon(action_bar_layer, BUTTON_ID_DOWN, image_action_dismiss);
 
   // move may watch out of action bar to keep it readable
-
   #if defined(PBL_RECT)
     text_layer_set_text_alignment(text_layer, GTextAlignmentLeft);
   #endif
 
   action_bar_layer_add_to_window(action_bar_layer, window);
-
 }
 
-// action bar
+// Destroy the action bar
 static void action_bar_hide(Window *window) {
   if (action_bar_layer) {
     action_bar_layer_remove_from_window(action_bar_layer);
@@ -683,6 +600,7 @@ static void action_bar_hide(Window *window) {
   }
 }
 
+// Show the bottom alarm bar layer
 static void alarm_show(char* text) {
   if (debug) APP_LOG(APP_LOG_LEVEL_DEBUG, "Alarm show: %s", text);
 	
@@ -700,80 +618,11 @@ static void alarm_show(char* text) {
 	layer_set_frame(bitmap_layer_get_layer(image_layer_alarm), GRect(((bounds.size.w - 22 - text_size) / 2), alarm_layer_top, 20, 20));
 	
 	layer_set_hidden(text_layer_get_layer(alarm_parent_layer), false);
-	
-	/*
-  Layer *window_layer = window_get_root_layer(window);
-  GRect bounds = layer_get_bounds(window_layer);
-
-  if (debug) APP_LOG(APP_LOG_LEVEL_DEBUG, "Bounds: %d x %d", bounds.size.h, bounds.size.w);
-
-  int alarm_layer_height = 40;
-  int alarm_layer_top = 10;
-
-  #if defined(PBL_ROUND)
-    alarm_layer_height = 40;
-    alarm_layer_top = 6;
-  #endif
-
-	if (!alarm_layer_created) {
-		alarm_parent_layer = text_layer_create(GRect(0, bounds.size.h - alarm_layer_height, bounds.size.w, bounds.size.h));
-		alarm_parent_layer_ref = text_layer_get_layer(alarm_parent_layer);
-
-		alarm_layer = text_layer_create(GRect(22, 0, bounds.size.w - 22, alarm_layer_height));
-		text_layer_set_text(alarm_layer, text);
-		text_layer_set_text_alignment(alarm_layer, GTextAlignmentCenter);
-
-		#if defined(PBL_RECT)
-			text_layer_set_font(alarm_layer, fonts_get_system_font(FONT_KEY_BITHAM_30_BLACK));
-			text_layer_set_background_color(alarm_parent_layer, GColorWhite);
-			text_layer_set_overflow_mode(alarm_layer, GTextOverflowModeWordWrap);
-			text_layer_set_text_color(alarm_layer, GColorBlack);
-		#elif defined(PBL_ROUND)
-			text_layer_set_font(alarm_layer, fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD));
-			text_layer_set_background_color(alarm_parent_layer, GColorClear);
-			text_layer_set_background_color(alarm_layer, GColorClear);
-			text_layer_set_text_color(alarm_layer, GColorWhite);
-		#endif
-
-		alarm_layer_ref = text_layer_get_layer(alarm_layer);
-		layer_add_child(alarm_parent_layer_ref, alarm_layer_ref);
-
-		int text_size = text_layer_get_content_size(alarm_layer).w;
-
-		image_alarm = gbitmap_create_with_resource(RESOURCE_ID_IMAGE_ALARM);
-		image_layer_alarm = bitmap_layer_create(GRect(((bounds.size.w - 22 - text_size) / 2), alarm_layer_top, 20, 20));
-		bitmap_layer_set_bitmap(image_layer_alarm, image_alarm);
-		bitmap_layer_set_alignment(image_layer_alarm, GAlignLeft);
-		image_layer_alarm_ref = bitmap_layer_get_layer(image_layer_alarm);
-		layer_add_child(alarm_parent_layer_ref, image_layer_alarm_ref);
-
-		layer_add_child(window_layer, alarm_parent_layer_ref);
-		
-		alarm_layer_created = true;
-	}
-	else {
-		text_layer_set_text(alarm_layer, text);
-	}
-	*/
 }
 
+// Hide the alarm bar
 static void alarm_hide() {	
 	layer_set_hidden(text_layer_get_layer(alarm_parent_layer), true);
-	/*
-  if (alarm_layer_created) {
-		if (DEBUG) APP_LOG(APP_LOG_LEVEL_DEBUG, "Removing Alarm");
-    layer_remove_from_parent(alarm_layer_ref);
-    layer_remove_from_parent(image_layer_alarm_ref);
-    layer_remove_from_parent(alarm_parent_layer_ref);
-
-    gbitmap_destroy(image_alarm);
-    bitmap_layer_destroy(image_layer_alarm);
-    text_layer_destroy(alarm_layer);
-    text_layer_destroy(alarm_parent_layer);
-		
-		alarm_layer_created = false;
-  }
-	*/
 }
 
 float asqrt(const float num) {
@@ -792,22 +641,15 @@ float asqrt(const float num) {
 // Business logic
 void store_max(AccelData data) {
   if (last) {
-
-//    APP_LOG(APP_LOG_LEVEL_ERROR, "Accel %d %d %d", data.x, data.y, data.z);
-
-
     int sum = absolute(last_x - data.x) + absolute(last_y - data.y) + absolute(last_z - data.z);
     int sum_new = asqrt(data.x * data.x + data.y * data.y + data.z * data.z);
 
     if (sum > max_sum) {
-        max_sum = sum;
-    }
-
+			max_sum = sum;
+		}
     if (sum_new > max_sum_new) {
         max_sum_new = sum_new;
     }
-//      max_sum = max_sum + sum;
-
   }
   last = true;
   last_x = data.x;
@@ -823,8 +665,7 @@ static void save_settings() {
   int ret = persist_write_data(SETTINGS_KEY, &conf, sizeof(conf));
 	if (DEBUG) APP_LOG(APP_LOG_LEVEL_DEBUG, "Conf - Persistent Settings Saved | %d / Vibe: %d", ret, conf.alarmVibe);
 	
-	
-	// Pop the window
+	// Pop the window to restart with new configs
 	window_stack_pop_all(true);
 	window_stack_push(window, true);
 	send_action_using_app_message(MSG_KEY_START_APP);	
@@ -882,12 +723,12 @@ void in_received_handler(DictionaryIterator *received, void *context) {
   Tuple *alarm_hour_of_day = dict_find(received, MSG_KEY_ALARM_HOUR_OF_DAY);
   Tuple *alarm_minute = dict_find(received, MSG_KEY_ALARM_MINUTE);
   Tuple *batch_size = dict_find(received, MSG_KEY_SET_BATCH_SIZE);
-  Tuple *timeline_token = dict_find(received, MSG_KEY_TIMELINE_TOKEN);
   Tuple *suspend_mode = dict_find(received, MSG_KEY_SET_SUSPEND_STATUS);
   Tuple *suspend_ts = dict_find(received, MSG_KEY_SUSPEND_TILL_TS);
   Tuple *hint = dict_find(received, MSG_KEY_HINT);
   Tuple *alarm_ts = dict_find(received, MSG_KEY_ALARM_TS);
   Tuple *enable_hr = dict_find(received, MSG_KEY_ENABLE_HR);
+	Tuple *timeline_token = dict_find(received, MESSAGE_KEY_timeline_token);
 
   if (alarm_start) {
     if (alarm_start->length == 4) {
@@ -979,7 +820,7 @@ void in_received_handler(DictionaryIterator *received, void *context) {
     send_timeline_token(timeline_token->value->cstring);
   }
 	
-		// Configuration handling	
+	// Configuration handling	
 	Tuple *t_uiConf[16];
 	for (int i = 0; i < 16; i++){
 		t_uiConf[i] = dict_find(received, MESSAGE_KEY_uiConf + i);
@@ -1012,8 +853,7 @@ static void info_update_proc(Layer *layer, GContext *ctx) {
 	if (DEBUG) APP_LOG(APP_LOG_LEVEL_DEBUG, "info_update_proc");
 	GRect bounds = layer_get_bounds(layer);
 	
-	if (conf.enableInfo) {	
-
+	if (conf.enableInfo) {
 		// Bluetooth
 		gbitmap_set_bounds(icon_bt, GRect(bluetoothState ? 0 : 16,0,16,16));
 		graphics_draw_bitmap_in_rect(ctx, icon_bt, PBL_IF_RECT_ELSE(GRect(0,0,16,16), GRect(8,bounds.size.w/2-32,16,16)));
@@ -1022,7 +862,7 @@ static void info_update_proc(Layer *layer, GContext *ctx) {
 		gbitmap_set_bounds(icon_qt, GRect(quietTimeState ? 0 : 16,16,16,16));
 		graphics_draw_bitmap_in_rect(ctx, icon_qt, PBL_IF_RECT_ELSE(GRect(16,0,16,16), GRect(8,bounds.size.w/2+16,16,16)));
 
-			// Battery batteryLevel / BatteryState
+		// Battery batteryLevel / BatteryState
 		graphics_draw_bitmap_in_rect(ctx, icon_bat, PBL_IF_RECT_ELSE(GRect(bounds.size.w-32,0,32,16), GRect(5,(bounds.size.w/2)-16,16,32)));
 		graphics_context_set_fill_color(ctx, GColorWhite);
 		graphics_fill_rect(ctx, PBL_IF_RECT_ELSE( GRect(118,5,(batteryLevel*2),6), GRect(10,(bounds.size.h/2)-10+(20-batteryLevel*2),6,(batteryLevel*2)) ), 1, GCornersAll);
@@ -1043,14 +883,14 @@ static void handle_battery(BatteryChargeState charge_state) {
 	else if (charge_state.is_plugged) batteryState = 2;
 	else batteryState = 0;	
 	batteryLevel = ((charge_state.charge_percent)/10);
-	layer_mark_dirty(info_layer);
+	//layer_mark_dirty(info_layer);
 }
 
 // Monitor BT status
 static void handle_bluetooth(bool connected) {
 	if (debug) APP_LOG(APP_LOG_LEVEL_DEBUG, "handle_bluetooth: %d", connected);
   bluetoothState = connected;
-	layer_mark_dirty(info_layer);
+	//layer_mark_dirty(info_layer);
 }
 
 // Handle Health Events
@@ -1062,7 +902,7 @@ static void handle_health(HealthEventType event, void *context) {
 			bpmValue = health_service_peek_current_value(HealthMetricHeartRateBPM);
 			if (bpmValue != bpmValueOld) {
 				bpmValueOld = bpmValue;
-				layer_mark_dirty(info_layer);
+				//layer_mark_dirty(info_layer);
 			}
 		}
 }
@@ -1107,29 +947,25 @@ static void timer_callback(void *data) {
 		
     if (alarm_delay > -1 && alarm_time_elapsed >= alarm_delay) {
 			if (conf.alarmVibe == 1) {
-				if (alarm_time_elapsed - alarm_delay >= 100000) {
-          //vibes_pwm(10,500,6,175);
-					if (DEBUG) APP_LOG(APP_LOG_LEVEL_DEBUG, "Vibing for alarm using GentlePWM 6");
+				if (DEBUG) APP_LOG(APP_LOG_LEVEL_DEBUG, "Vibing for alarm using GentlerPWM");
+				// Using GentlerPWM vibes
+				if (alarm_time_elapsed - alarm_delay >= 100000) { 
 					vibes_enqueue_custom_pattern(pat5);
         } else if (alarm_time_elapsed - alarm_delay >= 80000) {
           vibes_pwm(8,250,6,125);
-					if (DEBUG) APP_LOG(APP_LOG_LEVEL_DEBUG, "Vibing for alarm using GentlePWM 5");
         } else if (alarm_time_elapsed - alarm_delay >= 60000) {
           vibes_pwm(6,650,3,400);
-					if (DEBUG) APP_LOG(APP_LOG_LEVEL_DEBUG, "Vibing for alarm using GentlePWM 4");
         } else if (alarm_time_elapsed - alarm_delay >= 40000) {
           vibes_pwm(5,400,2,1500);
-					if (DEBUG) APP_LOG(APP_LOG_LEVEL_DEBUG, "Vibing for alarm using GentlePWM 3");
 				} else if (alarm_time_elapsed - alarm_delay >= 20000) {
-					vibes_pwm(4,300,2,1750);
-					if (DEBUG) APP_LOG(APP_LOG_LEVEL_DEBUG, "Vibing for alarm using GentlePWM 2");
+					vibes_pwm(4,250,2,1750);
         } else {
-          vibes_pwm(4,250,2,2000);
-					if (DEBUG) APP_LOG(APP_LOG_LEVEL_DEBUG, "Vibing for alarm using GentlePWM 1");
+          vibes_pwm(3,250,1,0);
         }
 			}
 			else {
 				if (DEBUG) APP_LOG(APP_LOG_LEVEL_DEBUG, "Vibing for alarm using default patterns");
+				// Using default vibes
         if (alarm_time_elapsed - alarm_delay >= 80000) {
           vibes_enqueue_custom_pattern(pat5);
         } else if (alarm_time_elapsed - alarm_delay >= 40000) {
@@ -1141,8 +977,6 @@ static void timer_callback(void *data) {
         }
 			}
     }
-
-
   } else {
     alarm_counter = 0;
   }
@@ -1161,7 +995,6 @@ static void timer_callback(void *data) {
 
 // window load
 static void window_load(Window *window) {
-
   if (debug) APP_LOG(APP_LOG_LEVEL_DEBUG, "Window load");
 
   Layer *window_layer = window_get_root_layer(window);
@@ -1294,7 +1127,6 @@ static void window_load(Window *window) {
 
 // window unload
 static void window_unload(Window *window) {
-
   if (debug) APP_LOG(APP_LOG_LEVEL_DEBUG, "Window unload");
 
   text_layer_destroy(text_layer);
@@ -1308,10 +1140,6 @@ static void window_unload(Window *window) {
   tick_timer_service_unsubscribe();
 	
 	// Alarm bar
-	//layer_remove_from_parent(alarm_layer_ref);
-	//layer_remove_from_parent(image_layer_alarm_ref);
-	//layer_remove_from_parent(alarm_parent_layer_ref);
-
 	gbitmap_destroy(image_alarm);
 	bitmap_layer_destroy(image_layer_alarm);
 	text_layer_destroy(alarm_layer);
@@ -1332,7 +1160,6 @@ static void window_unload(Window *window) {
 	layer_destroy(info_layer);	
 }
 
-
 static void focus_handler(bool in_focus) {
   if (debug && in_focus) APP_LOG(APP_LOG_LEVEL_DEBUG, "In focus");
   if (debug && !in_focus) APP_LOG(APP_LOG_LEVEL_DEBUG, "NOT In focus");
@@ -1344,8 +1171,7 @@ static void focus_handler(bool in_focus) {
 
 // INITIALIZATION AND MAIN
 
-static void init(void) {
-	
+static void init(void) {	
 	// Load clay settings
 	load_settings();
 	
@@ -1356,10 +1182,7 @@ static void init(void) {
   app_message_register_outbox_failed(out_failed_handler);
 
   app_focus_service_subscribe(focus_handler);
-
-  const uint32_t inbound_size = 512;
-  const uint32_t outbound_size = 128;
-  app_message_open(inbound_size, outbound_size);
+  app_message_open(512, 128);
 
   // Initialize window
   window = window_create();
@@ -1410,9 +1233,7 @@ static void deinit(void) {
 
 int main(void) {
   init();
-
   if (debug) APP_LOG(APP_LOG_LEVEL_DEBUG, "Done initializing, pushed window: %p", window);
-
   app_event_loop();
   deinit();
 }
