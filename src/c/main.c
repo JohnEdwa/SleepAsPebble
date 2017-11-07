@@ -14,9 +14,6 @@
 
 #define SECONDS_IN_WEEK 604800
 
-#define SPRITE_H 16
-#define SPRITE_W 16
-
 // CONSTANTS
 // Messages coming from phone
 enum {
@@ -60,6 +57,7 @@ typedef struct ClaySettings {
 	bool enableHeartrate;
 	bool doubleTapExit;
 	unsigned char timeFont;
+	unsigned char alarmFont;
 	
 	unsigned char alarmVibe;
 } ClaySettings;
@@ -72,6 +70,7 @@ static void default_settings() {
 	conf.enableHeartrate = false;
 	conf.doubleTapExit = false;
 	conf.timeFont = 0;
+	conf.alarmFont = 0;
 	conf.alarmVibe = 0;
 }
 
@@ -606,13 +605,18 @@ static void alarm_show(char* text) {
 	
   GRect bounds = layer_get_bounds(window_get_root_layer(window));
 	
-	text_layer_set_text(alarm_layer, text);	
+	text_layer_set_text(alarm_layer, text);		
 	
 	int alarm_layer_height = PBL_IF_RECT_ELSE(40,40);
   int alarm_layer_top = PBL_IF_RECT_ELSE(10,6);
-
+	
 	layer_set_frame(text_layer_get_layer(alarm_parent_layer), GRect(0, bounds.size.h - alarm_layer_height, bounds.size.w, bounds.size.h));
-	layer_set_frame(text_layer_get_layer(alarm_layer), GRect(22, 0, bounds.size.w - 22, alarm_layer_height));
+	
+	
+		if 			(conf.alarmFont == 1) layer_set_frame(text_layer_get_layer(alarm_layer), GRect(22, -2, bounds.size.w - 22, alarm_layer_height));
+		else if (conf.alarmFont == 3) layer_set_frame(text_layer_get_layer(alarm_layer), GRect(22, 2, bounds.size.w - 22, alarm_layer_height));
+		else if (conf.alarmFont == 4) layer_set_frame(text_layer_get_layer(alarm_layer), GRect(22, -1, bounds.size.w - 22, alarm_layer_height));
+		else layer_set_frame(text_layer_get_layer(alarm_layer), GRect(22, 0, bounds.size.w - 22, alarm_layer_height));
 	
 	int text_size = text_layer_get_content_size(alarm_layer).w;
 	layer_set_frame(bitmap_layer_get_layer(image_layer_alarm), GRect(((bounds.size.w - 22 - text_size) / 2), alarm_layer_top, 20, 20));
@@ -831,6 +835,7 @@ void in_received_handler(DictionaryIterator *received, void *context) {
 	if (t_uiConf[2]) conf.enableInfo = t_uiConf[2]->value->int32 == 1;
 	if (t_uiConf[3]) conf.enableHeartrate = t_uiConf[3]->value->int32 == 1;
 	if (t_uiConf[4]) conf.timeFont = atoi(t_uiConf[4]->value->cstring);
+	if (t_uiConf[5]) conf.alarmFont = atoi(t_uiConf[5]->value->cstring);
 	
 	Tuple *t_vibeConf[8];
 	for (int i = 0; i < 16; i++){
@@ -1017,22 +1022,25 @@ static void window_load(Window *window) {
   layer_add_child(window_layer, bitmap_layer_get_layer(image_layer_pause));
 
 	// Time text layer
-  text_layer = text_layer_create(GRect(0,PBL_IF_RECT_ELSE(10,3), bounds.size.w, 80));
+  text_layer = text_layer_create(GRect(0,PBL_IF_RECT_ELSE(15,3), bounds.size.w, 80));
   text_layer_set_text_alignment(text_layer, GTextAlignmentCenter);
 	
 	font_w800_42 = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_HOUR_35));
 
   #if defined(PBL_RECT)
-		if 			(conf.timeFont == 0) text_layer_set_font(text_layer, fonts_get_system_font(FONT_KEY_ROBOTO_BOLD_SUBSET_49));
-		else if (conf.timeFont == 1) text_layer_set_font(text_layer, fonts_get_system_font(FONT_KEY_LECO_42_NUMBERS));
+		if 			(conf.timeFont == 1) text_layer_set_font(text_layer, fonts_get_system_font(FONT_KEY_LECO_42_NUMBERS));
 		else if (conf.timeFont == 2) text_layer_set_font(text_layer, fonts_get_system_font(FONT_KEY_BITHAM_42_LIGHT));
-		else if (conf.timeFont == 3) text_layer_set_font(text_layer, fonts_get_system_font(FONT_KEY_BITHAM_42_MEDIUM_NUMBERS));
 		else if (conf.timeFont == 4) text_layer_set_font(text_layer, fonts_get_system_font(FONT_KEY_BITHAM_42_BOLD));
 		else if (conf.timeFont == 5) {
 			layer_set_frame(text_layer_get_layer(text_layer), GRect(0, 25, bounds.size.w, 80 ));
 			text_layer_set_font(text_layer, font_w800_42);
 		}
-		else text_layer_set_font(text_layer, fonts_get_system_font(FONT_KEY_ROBOTO_BOLD_SUBSET_49));
+		else 
+		{
+			text_layer_set_font(text_layer, fonts_get_system_font(FONT_KEY_ROBOTO_BOLD_SUBSET_49));
+			layer_set_frame(text_layer_get_layer(text_layer), GRect(0, 10, bounds.size.w, 80 ));
+		}
+
   #elif defined(PBL_ROUND)
     text_layer_set_font(text_layer, fonts_get_system_font(FONT_KEY_GOTHIC_28_BOLD));
   #endif
@@ -1065,10 +1073,14 @@ static void window_load(Window *window) {
 	alarm_parent_layer = text_layer_create(GRect(0, 0, bounds.size.w, bounds.size.h));
 
 	alarm_layer = text_layer_create(GRect(0, 0, bounds.size.w, bounds.size.h));
-	text_layer_set_text_alignment(alarm_layer, GTextAlignmentCenter);
+	text_layer_set_text_alignment(alarm_layer, GTextAlignmentCenter);		
 
 	#if defined(PBL_RECT)
-		text_layer_set_font(alarm_layer, fonts_get_system_font(FONT_KEY_BITHAM_30_BLACK));
+		if 			(conf.alarmFont == 1) text_layer_set_font(alarm_layer, fonts_get_system_font(FONT_KEY_BITHAM_34_MEDIUM_NUMBERS));
+		else if (conf.alarmFont == 3) text_layer_set_font(alarm_layer, fonts_get_system_font(FONT_KEY_LECO_28_LIGHT_NUMBERS));
+		else if (conf.alarmFont == 4) text_layer_set_font(alarm_layer, fonts_get_system_font(FONT_KEY_LECO_32_BOLD_NUMBERS));
+		else text_layer_set_font(alarm_layer, fonts_get_system_font(FONT_KEY_BITHAM_30_BLACK));
+			
 		text_layer_set_background_color(alarm_parent_layer, GColorWhite);
 		text_layer_set_overflow_mode(alarm_layer, GTextOverflowModeWordWrap);
 		text_layer_set_text_color(alarm_layer, GColorBlack);
