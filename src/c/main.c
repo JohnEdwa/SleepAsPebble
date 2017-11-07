@@ -82,7 +82,6 @@ bool quietTimeStateOld = false;
 unsigned char batteryLevel = 0;
 unsigned char batteryState = 0;
 HealthValue bpmValue = 0;
-HealthValue bpmValueOld = 1;
 static char hr_text_buffer[8];
 
 // VARIABLES
@@ -350,42 +349,29 @@ static void send_data_using_app_message() {
     return;
   }
 
-/*	
-	if (pending_values_count == 1) {
-		// Use old message for single value batches, so that we are backwards compatible
-		Tuplet value = TupletInteger(MSG_KEY_ACCEL, pending_values[0]);
-		DictionaryResult res = dict_write_tuplet(iter, &value);
-		if (res != DICT_OK) {
-			APP_LOG(APP_LOG_LEVEL_ERROR, "Dict write failed with err: %d", res);
-			return;
-		}
-	} else {
-*/
-    uint8_t out_data[pending_values_count * 2];
-    for (int i = 0; i < pending_values_count; i++) {
-      out_data[2 * i] = pending_values[i] / 127;
-      out_data[2 * i + 1] = pending_values[i] % 127;
-    }
-    Tuplet value = TupletBytes(MSG_KEY_ACCEL_BATCH, (uint8_t*)out_data, pending_values_count * 2);
-    DictionaryResult res = dict_write_tuplet(iter, &value);
-    if (res != DICT_OK) {
-      APP_LOG(APP_LOG_LEVEL_ERROR, "Dict batch write failed with err: %d", res);
-      return;
-    }
+	uint8_t out_data[pending_values_count * 2];
+	for (int i = 0; i < pending_values_count; i++) {
+		out_data[2 * i] = pending_values[i] / 127;
+		out_data[2 * i + 1] = pending_values[i] % 127;
+	}
+	Tuplet value = TupletBytes(MSG_KEY_ACCEL_BATCH, (uint8_t*)out_data, pending_values_count * 2);
+	DictionaryResult res = dict_write_tuplet(iter, &value);
+	if (res != DICT_OK) {
+		APP_LOG(APP_LOG_LEVEL_ERROR, "Dict batch write failed with err: %d", res);
+		return;
+	}
 
-    uint8_t out_data_new[pending_values_count * 2];
-    for (int i = 0; i < pending_values_count; i++) {
-      out_data_new[2 * i] = pending_values_new[i] / 127;
-      out_data_new[2 * i + 1] = pending_values_new[i] % 127;
-    }
-    Tuplet value2 = TupletBytes(MSG_KEY_ACCEL_BATCH_NEW, (uint8_t*)out_data_new, pending_values_count * 2);
-    DictionaryResult res2 = dict_write_tuplet(iter, &value2);
-    if (res2 != DICT_OK) {
-      APP_LOG(APP_LOG_LEVEL_ERROR, "Dict batch write failed with err: %d", res2);
-      return;
-    }
-
-//  }
+	uint8_t out_data_new[pending_values_count * 2];
+	for (int i = 0; i < pending_values_count; i++) {
+		out_data_new[2 * i] = pending_values_new[i] / 127;
+		out_data_new[2 * i + 1] = pending_values_new[i] % 127;
+	}
+	Tuplet value2 = TupletBytes(MSG_KEY_ACCEL_BATCH_NEW, (uint8_t*)out_data_new, pending_values_count * 2);
+	DictionaryResult res2 = dict_write_tuplet(iter, &value2);
+	if (res2 != DICT_OK) {
+		APP_LOG(APP_LOG_LEVEL_ERROR, "Dict batch write failed with err: %d", res2);
+		return;
+	}
 
   if (hr) {
     #if defined(PBL_HEALTH)
@@ -625,7 +611,8 @@ static void alarm_show(char* text) {
 }
 
 // Hide the alarm bar
-static void alarm_hide() {	
+static void alarm_hide() {
+	if (debug) APP_LOG(APP_LOG_LEVEL_DEBUG, "Alarm hide");
 	layer_set_hidden(text_layer_get_layer(alarm_parent_layer), true);
 }
 
@@ -826,7 +813,7 @@ void in_received_handler(DictionaryIterator *received, void *context) {
 	
 	// Configuration handling	
 	Tuple *t_uiConf[16];
-	for (int i = 0; i < 16; i++){
+	for (int i = 0; i < 15; i++){
 		t_uiConf[i] = dict_find(received, MESSAGE_KEY_uiConf + i);
 	}
 	
@@ -838,7 +825,7 @@ void in_received_handler(DictionaryIterator *received, void *context) {
 	if (t_uiConf[5]) conf.alarmFont = atoi(t_uiConf[5]->value->cstring);
 	
 	Tuple *t_vibeConf[8];
-	for (int i = 0; i < 16; i++){
+	for (int i = 0; i < 7; i++){
 		t_vibeConf[i] = dict_find(received, MESSAGE_KEY_vibeConf + i);
 	}
 	
@@ -888,14 +875,12 @@ static void handle_battery(BatteryChargeState charge_state) {
 	else if (charge_state.is_plugged) batteryState = 2;
 	else batteryState = 0;	
 	batteryLevel = ((charge_state.charge_percent)/10);
-	//layer_mark_dirty(info_layer);
 }
 
 // Monitor BT status
 static void handle_bluetooth(bool connected) {
 	if (debug) APP_LOG(APP_LOG_LEVEL_DEBUG, "handle_bluetooth: %d", connected);
   bluetoothState = connected;
-	//layer_mark_dirty(info_layer);
 }
 
 // Handle Health Events
@@ -905,10 +890,6 @@ static void handle_health(HealthEventType event, void *context) {
 		if (debug) APP_LOG(APP_LOG_LEVEL_DEBUG, "update_health : %d", event);
 		if (event == HealthEventSignificantUpdate || event == HealthEventHeartRateUpdate) {
 			bpmValue = health_service_peek_current_value(HealthMetricHeartRateBPM);
-			if (bpmValue != bpmValueOld) {
-				bpmValueOld = bpmValue;
-				//layer_mark_dirty(info_layer);
-			}
 		}
 }
 #endif

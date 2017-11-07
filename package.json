@@ -15,7 +15,8 @@
         "messageKeys": [
             "uiConf[16]",
             "vibeConf[8]",
-            "timeline_token"
+            "timeline_token",
+            "signalNewAppMessageData"
         ],
         "projectType": "native",
         "resources": {
