@@ -42,12 +42,12 @@ enum {
     MSG_KEY_ACCEL_BATCH_NEW = 9,
 };
 
-/*
+
 // Messages coming from js
 enum {
     MSG_KEY_TIMELINE_TOKEN = 999,
 };
-*/
+
 
 // Clay settings struct
 #define SETTINGS_KEY 1
@@ -461,7 +461,7 @@ static void send_timeline_token(char* token) {
   }
 
   APP_LOG(APP_LOG_LEVEL_DEBUG, "Timeline token: %s", token);
-  Tuplet value = TupletCString(MESSAGE_KEY_timeline_token, token);
+  Tuplet value = TupletCString(MSG_KEY_TIMELINE_TOKEN, token);
   DictionaryResult res = dict_write_tuplet(iter, &value);
   if (res != DICT_OK) {
     APP_LOG(APP_LOG_LEVEL_ERROR, "Dict write failed with err: %d", res);

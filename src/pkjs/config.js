@@ -1,5 +1,5 @@
 module.exports = [
-  { "type": "heading", "defaultValue": "Sleep As Pebble configration." },
+  { "type": "heading", "defaultValue": "Sleep As Pebble configuration." },
   {
     "type": "section",
     "items": [
@@ -26,7 +26,7 @@ module.exports = [
         "type": "toggle",
         "messageKey": "uiConf[3]",
         "label": "Show Heartrate.",
-        "defaultValue": false,
+        "defaultValue": true,
 				"capabilities": ["HEALTH"]
       },
 			{
@@ -67,7 +67,7 @@ module.exports = [
 			{
 				"type": "select",
 				"messageKey": "vibeConf[0]",
-				"defaultValue": "0",
+				"defaultValue": "1",
 				"label": "AlarmVibration style",
 				"options": [
 					{ "label": "Original", "value": "0"},
