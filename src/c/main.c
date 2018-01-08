@@ -57,9 +57,9 @@ typedef struct ClaySettings {
 	bool enableHeartrate;
 	bool doubleTapExit;
 	unsigned char timeFont;
-	unsigned char alarmFont;
-	
+	unsigned char alarmFont;	
 	unsigned char alarmVibe;
+	unsigned char snoozeVibe;
 } ClaySettings;
 static ClaySettings conf;
 
@@ -72,6 +72,7 @@ static void default_settings() {
 	conf.timeFont = 0;
 	conf.alarmFont = 0;
 	conf.alarmVibe = 0;
+	conf.snoozeVibe = 0;
 }
 
 // info layer vars
@@ -112,6 +113,9 @@ static bool hide_ab_with_next_tick = false;
 static bool alarm = false;
 static int alarm_counter = 0;
 static int alarm_delay = 0;
+
+static bool snooze_vibe_done = false;
+static int snooze_counter = 0;
 
 static int postponed_action = -1;
 
@@ -251,7 +255,7 @@ void vibes_pwm(int8_t strength, uint16_t duration, int count, int delay) {
 			vibes_long_pulse(); // We were asked to vibe for a reason so lets do at least something.
 			return;
 		}
-		APP_LOG(APP_LOG_LEVEL_INFO, "(%d, dur %d, scale %d)", totalSegments, totalVibeDuration, SCALE);
+		APP_LOG(APP_LOG_LEVEL_INFO, "(%d, dur %d, scale %d, str: %d)", totalSegments, totalVibeDuration, SCALE, strength);
 		uint32_t pwm_segments[totalSegments];
 		uint16_t currentSegment = 0;
 		//if (DEBUG) APP_LOG(APP_LOG_LEVEL_INFO, "Segments: loop %d, total %d, size: %d, scale: %d", (int) loopSegments, (int) totalSegments, (int) sizeof(pwm_segments), SCALE);
@@ -474,9 +478,26 @@ static void send_timeline_token(char* token) {
 
 // Stops local alarm
 static void stopAlarm() {
-    alarm = false;
-    alarm_counter = 0;
-    if (debug) APP_LOG(APP_LOG_LEVEL_DEBUG, "Stopping local alarm vibe");
+	alarm = false;
+	alarm_counter = 0;
+	if (debug) APP_LOG(APP_LOG_LEVEL_DEBUG, "Stopping local alarm vibe");
+					
+	// If snooze counter has been enabled, use it.
+	if (conf.snoozeVibe != 0 && snooze_vibe_done == false) {
+		if (snooze_counter > 0) {
+			if (conf.snoozeVibe == 1) vibes_pwm(3,150,snooze_counter+1,250);
+			else if (conf.snoozeVibe == 2) vibes_pwm(5,150,snooze_counter+1,250);
+			else if (conf.snoozeVibe == 3) vibes_pwm(8,150,snooze_counter+1,250);
+			else if (conf.snoozeVibe == 4) vibes_pwm(10,150,snooze_counter+1,250);
+			else if (conf.snoozeVibe == 5) vibes_pwm((snooze_counter*2)+1,150,snooze_counter+1,250);
+			else if (conf.snoozeVibe == 6) vibes_pwm((snooze_counter*3),150,snooze_counter+1,250);	
+			else if (conf.snoozeVibe == 7) vibes_pwm((snooze_counter*4),150,snooze_counter+1,250);
+			APP_LOG(APP_LOG_LEVEL_DEBUG, "Snooze Counter: %d", snooze_counter);
+		}
+		snooze_vibe_done = true;
+		snooze_counter++;
+	}
+	
 }
 
 // Handles single click events
@@ -616,6 +637,7 @@ static void alarm_hide() {
 	layer_set_hidden(text_layer_get_layer(alarm_parent_layer), true);
 }
 
+// Square root helper
 float asqrt(const float num) {
     const uint MAX_STEPS = 40;
     const float MAX_ERROR = 0.001;
@@ -830,6 +852,7 @@ void in_received_handler(DictionaryIterator *received, void *context) {
 	}
 	
 	if (t_vibeConf[0]) conf.alarmVibe = atoi(t_vibeConf[0]->value->cstring);
+	if (t_vibeConf[1]) conf.snoozeVibe = atoi(t_vibeConf[1]->value->cstring);
 	
 	// Don't bother saving every communication, only if we got config settings.
 	if (t_uiConf[0] && t_vibeConf[0]) {
@@ -928,7 +951,9 @@ static void timer_callback(void *data) {
     }
 
     alarm_counter++;
-
+		
+		snooze_vibe_done = false;
+		
     int alarm_time_elapsed = ((alarm_counter - 1) * SAMPLING_TIMER);
 		
     if (alarm_delay > -1 && alarm_time_elapsed >= alarm_delay) {
@@ -944,9 +969,9 @@ static void timer_callback(void *data) {
         } else if (alarm_time_elapsed - alarm_delay >= 40000) {
           vibes_pwm(5,400,2,1500);
 				} else if (alarm_time_elapsed - alarm_delay >= 20000) {
-					vibes_pwm(4,250,2,1750);
+					vibes_pwm(3,250,2,1750);
         } else {
-          vibes_pwm(3,250,1,0);
+          vibes_pwm(2,250,1,0);
         }
 			}
 			else {

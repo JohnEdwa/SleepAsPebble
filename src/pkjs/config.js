@@ -73,7 +73,24 @@ module.exports = [
 					{ "label": "Original", "value": "0"},
 					{ "label": "Gentler PWM", "value": "1"}			
 				]
-			},		
+			},
+			{
+				"type": "select",
+				"messageKey": "vibeConf[1]",
+				"defaultValue": "0",
+				"label": "Snooze counter vibration strength.",
+				"description": "Vibrates when you snooze from the watch to remind you how many you've done, value in ( ) denotes strength of each count. Doesn't vibrate on the first snooze.",
+				"options": [
+					{ "label": "Disabled", "value": "0"},
+					{ "label": "Static Low (3)", "value": "1"},
+					{ "label": "Static Medium (5)", "value": "2"},
+					{ "label": "Static Strong (8)", "value": "3"},
+					{ "label": "Static Max (10)", "value": "4"},
+					{ "label": "Incremental Gentle (3,5,7,9,10)", "value": "5"},
+					{ "label": "Incremental Harsh (3,6,9,10)", "value": "6"},
+					{ "label": "Incremental Aggressive (4,8,10)", "value": "7"},
+				]
+			},
 		]
   },
   { "type": "submit", "defaultValue": "Save Settings" }
